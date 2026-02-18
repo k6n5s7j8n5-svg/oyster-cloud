@@ -1,7 +1,10 @@
-@app.route("/webhook", methods=["GET", "POST"])
-def webhook():
-    if request.method == "GET":
-        return "ok", 200
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
     print("LINEきた")
-    print(request.get_json(silent=True))
-    return "ok", 200
+    print(data)
+    return {"ok": True}
