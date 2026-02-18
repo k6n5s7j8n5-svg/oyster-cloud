@@ -24,7 +24,7 @@ async def webhook(request: Request):
         if not reply_token or text is None:
             continue
 
-        reply_text = f"受け取ったで: {text}"
+        reply_text = f"AIテストやで: {text}"
 
         res = requests.post(
             "https://api.line.me/v2/bot/message/reply",
