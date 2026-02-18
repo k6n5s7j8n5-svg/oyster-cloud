@@ -1,7 +1,4 @@
 fastapi
 uvicorn
 gunicorn
-line-bot-sdk
-python-dotenv
 requests
-opanai
