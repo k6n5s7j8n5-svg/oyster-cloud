@@ -1,7 +1,7 @@
 import os
 import requests
 from fastapi import FastAPI, Request
-from fastapi import FastAPI, OpenAI
+from fastapi import OpenAI
 
 app = FastAPI()
 client= OpenAI()
