@@ -8,6 +8,9 @@ app = FastAPI()
 LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+print("OPENAI_API_KEY exists?", bool(OPENAI_API_KEY))
+print("LINE_TOKEN exists?",bool(LINE_TOKEN))
+
 def get_client():
     if not OPENAI_API_KEY:
         return None
