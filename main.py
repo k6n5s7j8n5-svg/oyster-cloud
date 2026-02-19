@@ -5,8 +5,8 @@ from openai import OpenAI
 
 app = FastAPI()
 
-LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -18,7 +18,6 @@ async def webhook(request: Request):
 
     if not LINE_TOKEN:
         return {"ok": False, "error": "LINE_CHANNEL_ACCESS_TOKEN is missing"}
-
     if not OPENAI_API_KEY:
         return {"ok": False, "error": "OPENAI_API_KEY is missing"}
 
@@ -31,16 +30,19 @@ async def webhook(request: Request):
         if not reply_token or text is None:
             continue
 
-        # ===== AI生成 =====
+        # ===== AI返信 =====
         try:
-            resp = client.responses.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
-                input=f"あなたは大阪の立ち飲み牡蠣屋の店主の相棒AI。関西弁で短めに返事して。\nユーザー: {text}\nAI:"
+                messages=[
+                    {"role": "system", "content": "あなたは大阪の立ち飲み牡蠣屋の店主の相棒AI。関西弁で短めに返事して。"},
+                    {"role": "user", "content": text},
+                ],
             )
-            ai_text = resp.output_text.strip()
+            ai_text = response.choices[0].message.content.strip()
         except Exception as e:
             print("OpenAI error:", e)
-            ai_text = "ごめん、AI側が一瞬コケたわ💦 もっかい送って〜"
+            ai_text = "ごめん、AI側が一瞬コケたわ💦 もう一回送って〜"
 
         # ===== LINEへ返信 =====
         res = requests.post(
