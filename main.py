@@ -5,12 +5,8 @@ from openai import OpenAI
 
 app = FastAPI()
 
-# 環境変数から読む（Railway Variablesに入れてる前提）
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
-# OpenAIクライアント（1回だけ生成）
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()  # OPENAI_API_KEY は環境変数から自動で読む
 
 @app.get("/")
 def root():
@@ -24,8 +20,6 @@ async def webhook(request: Request):
 
     if not LINE_TOKEN:
         return {"ok": False, "error": "LINE_CHANNEL_ACCESS_TOKEN is missing"}
-    if not OPENAI_API_KEY:
-        return {"ok": False, "error": "OPENAI_API_KEY is missing"}
 
     events = body.get("events", [])
     for ev in events:
@@ -39,38 +33,32 @@ async def webhook(request: Request):
 
         # ===== AI生成 =====
         try:
-            resp = client.responses.create(
+            completion = client.chat.completions.create(
                 model="gpt-4o-mini",
-                input=(
-                    "あなたは大阪の立ち飲み牡蠣屋の店主の相棒AI。"
-                    "関西弁で、短めに、フレンドリーに返事して。\n"
-                    f"ユーザー: {text}\nAI:"
-                ),
+                messages=[
+                    {"role": "system", "content": "あなたは大阪の立ち飲み牡蠣屋の店主の相棒AI。関西弁で短めに返事して。"},
+                    {"role": "user", "content": text},
+                ],
             )
-            ai_text = (resp.output_text or "").strip()
-            if not ai_text:
-                ai_text = "ごめん、今ちょい詰まったわ💦もう一回送って！"
+            ai_text = completion.choices[0].message.content.strip()
         except Exception as e:
             print("OpenAI error:", e)
-            ai_text = "ごめん、今ちょい詰まったわ💦もう一回送って！"
+            ai_text = "ごめん、今ちょい詰まったわ💦 もう一回送って！"
 
         # ===== LINEへ返信 =====
-        try:
-            res = requests.post(
-                "https://api.line.me/v2/bot/message/reply",
-                headers={
-                    "Authorization": f"Bearer {LINE_TOKEN}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "replyToken": reply_token,
-                    "messages": [{"type": "text", "text": ai_text}],
-                },
-                timeout=10,
-            )
-            print("reply status:", res.status_code, res.text)
-        except Exception as e:
-            print("LINE reply error:", e)
+        res = requests.post(
+            "https://api.line.me/v2/bot/message/reply",
+            headers={
+                "Authorization": f"Bearer {LINE_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "replyToken": reply_token,
+                "messages": [{"type": "text", "text": ai_text}],
+            },
+            timeout=10,
+        )
+        print("reply status:", res.status_code, res.text)
 
     return {"ok": True}
 
