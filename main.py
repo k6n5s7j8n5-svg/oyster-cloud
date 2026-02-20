@@ -14,7 +14,8 @@ OWNER_USER_ID = os.getenv("OWNER_USER_ID")  # ← Railway Variablesに入れる
 state = {
     "count": None,          # 人数
     "status": "不明",       # "空き" / "満席" / "不明"
-    "note": "",             # 例: "ビニールカーテン中で最大10名"
+    "note": "",             # 例: "ビニールカーテン中で最大10名" 
+    "oyster_left":None,     # 牡蠣残り数（None＝未設定）
 }
 
 def get_client():
@@ -137,6 +138,59 @@ async def webhook(request: Request):
             if text.startswith("#状況"):
                 line_reply(reply_token, crowd_text())
                 continue
+                        user_id = (ev.get("source") or {}).get("userId")
+        is_owner = (OWNER_USER_ID is not None) and (user_id == OWNER_USER_ID)
+
+        # =========================
+        # 店主コマンド：#牡蠣 40
+        # =========================
+        m_oyster_set = re.match(r"^\s*#牡蠣\s*(\d+)?\s*$", text)
+        if m_oyster_set and is_owner:
+            num = m_oyster_set.group(1)
+            if num is None:
+                # #牡蠣 だけ送ったら現在値を返す
+                if state["oyster_left"] is None:
+                    line_reply(reply_token, "牡蠣残り数まだ未設定やで！例：#牡蠣 40")
+                else:
+                    line_reply(reply_token, f"いま牡蠣残りは {state['oyster_left']} 個やで🦪")
+            else:
+                state["oyster_left"] = int(num)
+                if state["oyster_left"] <= 0:
+                    line_reply(reply_token, "OK！牡蠣は完売(0)に更新したで🙏")
+                else:
+                    line_reply(reply_token, f"OK！牡蠣残り {state['oyster_left']} 個に更新したで🦪")
+            continue
+
+        # 店主以外が #牡蠣 送ってきたら軽くガード
+        if re.match(r"^\s*#牡蠣", text) and not is_owner:
+            line_reply(reply_token, "それは店主専用コマンドやで🙏")
+            continue
+
+        # =========================
+        # お客さん質問：牡蠣ある？
+        # =========================
+                if re.search(r"(牡蠣|カキ).*(ある|まだ|残|いける|あります|残って)", text) or re.search(r"(生牡蠣|焼き牡蠣|蒸し牡蠣)", text):
+            left = state.get("oyster_left")
+
+            if left is None:
+                line_reply(reply_token, "牡蠣の残り数まだ更新されてへん🙏 店主に聞いてみて〜")
+
+            elif left <= 0:
+                line_reply(reply_token, "今日は牡蠣完売や🙏 また仕入れたら言うで！")
+
+            elif left <= 5:
+                line_reply(reply_token, f"残り {left} 個…！売り切れ寸前やで💦 今すぐ来た方がええ！")
+
+            elif left <= 15:
+                line_reply(reply_token, f"牡蠣まだあるで🦪 残り {left} 個！早めにおいで〜")
+
+            elif left <= 50:
+                line_reply(reply_token, f"牡蠣いけるで🦪 残り {left} 個！まだ余裕あるで〜")
+
+            else:
+                line_reply(reply_token, f"牡蠣まだまだあるで🦪✨ 残り {left} 個！ゆっくりおいで〜")
+
+            continue
 
         # ====== お客さん向け：混雑質問に即答 ======
         crowd_keywords = ("何人", "店内", "混んで", "混雑", "空いて", "満席", "入れる")
