@@ -176,10 +176,20 @@ async def webhook(request: Request):
             continue
 
         # 牡蠣残り / 在庫
-        if re.search(r"(牡蠣|かき).*(残り|あと|在庫)|残り.*(牡蠣|かき)|在庫", text):
+        if re.search(r"(牡蠣|かき).*(残り|あと|在庫)|残り.*(牡蠣|かき).(生|殻).*牡蠣|牡蠣.*(生|殻)|在庫", text):
             line_reply(reply_token, oysters_message())
-            continue
+            continue# ===== 牡蠣ある？系（超重要）=====
+        if re.search(r"(牡蠣|かき)", text):
+        # 「ある」「あります」「いける」「食べれる」「？」など含む場合
+        if re.search(r"(ある|あります|いける|食べれる|食べられる|\?)", text):
+        line_reply(reply_token, oysters_message())
+        continue
 
+         # 「牡蠣ある？」みたいに短文でも拾う
+        if text.strip() in ("牡蠣ある", "牡蠣ある？", "牡蠣ありますか", "牡蠣あるかな"):
+        line_reply(reply_token, oysters_message())
+        continue
+            (生|殻).*牡蠣|牡蠣.*(生|殻)
         # ======================
         # ③ それ以外はOpenAIで雑談（任意）
         # ======================
