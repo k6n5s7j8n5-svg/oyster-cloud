@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import Request
 
-app = FastAPI()
-
-@app.get("/")
-def health():
-    return {"ok": True}
+@app.post("/callback")
+async def callback(request: Request):
+    body = await request.body()
+    print(body)
+    return "OK"
