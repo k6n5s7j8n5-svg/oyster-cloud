@@ -1,8 +1,10 @@
-FROM mcr.microsoft.com/playwright/python:latest
+FROM python:3.11-slim
 
 WORKDIR /app
-COPY . /app
+
+# サブディレクトリをコピー
+COPY threads-auto/threads-auto/ /app/
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh","-c","uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
