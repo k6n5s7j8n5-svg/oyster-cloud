@@ -1,6 +1,0 @@
-fastapi
-uvicorn
-line-bot-sdk
-playwright
-psycopg2-binary
-python-dotenv
