@@ -2,7 +2,6 @@ import os
 import re
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
-import threads_bot
 
 from linebot.v3.webhook import WebhookParser
 from linebot.v3.messaging import (
@@ -79,6 +78,7 @@ async def callback(request: Request):
             text = event.message.text.strip()
 
             if text.startswith("投稿 "):
+                import threads_bot
                 post_text = text.replace("投稿 ", "", 1).strip()
                 try:
                     threads_bot.post_to_threads(post_text)
