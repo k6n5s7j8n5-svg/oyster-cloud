@@ -13,4 +13,4 @@ RUN playwright install --with-deps chromium
 COPY . /app/
 
 # main.pyを起動
-CMD ["sh","-c","python -m uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh","-c","python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
