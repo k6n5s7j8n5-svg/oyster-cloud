@@ -166,15 +166,15 @@ async def callback(request: Request):
         else:
             # ★ 店主でもAI返信できるようにする
             try:
-    ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
+    　　　　　　　ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
 
-    if ai_text:
-        reply_text(event.reply_token, ai_text)
-    else:
-        reply_text(event.reply_token, "今ちょいAIの返事が出えへん🙏")
+    　　　　　　　if ai_text:
+        　　　　　　　reply_text(event.reply_token, ai_text)
+    　　　　　　　else:
+       　　　　　　　 reply_text(event.reply_token, "今ちょいAIの返事が出えへん🙏")
 
-except Exception as e:
-    print("AI exception:", e)
-    reply_text(event.reply_token, "ごめん、今AIの返事がうまく出えへん🙏 ちょい後でもっかい送ってな！")
+　　　　　　　except Exception as e:
+    　　　　　　　print("AI exception:", e)
+    　　　　　　　reply_text(event.reply_token, "ごめん、今AIの返事がうまく出えへん🙏 ちょい後でもっかい送ってな！")
 
     return PlainTextResponse("OK")
