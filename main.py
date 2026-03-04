@@ -11,9 +11,10 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 import db
+import threads_bot
 
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "").strip()
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 
 app = FastAPI()
 db.init_db()
@@ -33,18 +34,16 @@ def healthz():
     return {"status": "healthy"}
 
 def reply_text(reply_token: str, text: str):
-    # 返信失敗で落ちると502になるので握る
-    try:
-        with ApiClient(config) as api_client:
-            api = MessagingApi(api_client)
-            api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=reply_token,
-                    messages=[TextMessage(text=text)]
-                )
+    if not config:
+        return
+    with ApiClient(config) as api_client:
+        api = MessagingApi(api_client)
+        api.reply_message(
+            ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[TextMessage(text=text)]
             )
-    except Exception as e:
-        print("reply_text error:", e)
+        )
 
 def parse_people(text: str):
     m = re.search(r"(\d+)\s*人", text)
@@ -56,32 +55,25 @@ def parse_oysters(text: str):
 
 @app.post("/callback")
 async def callback(request: Request):
-    body = await request.body()
-    body_text = body.decode("utf-8", errors="ignore")
-    signature = request.headers.get("X-Line-Signature", "")
-
-    # LINEの「検証」や空リクエストでも落とさず200返す
-    if not signature or not body_text.strip():
-        return PlainTextResponse("OK")
-
-    if not parser or not config:
+    if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET and parser and config):
         raise HTTPException(status_code=500, detail="LINE env not set")
+
+    signature = request.headers.get("X-Line-Signature", "")
+    body = await request.body()
+    body_text = body.decode("utf-8")
 
     try:
         events = parser.parse(body_text, signature)
-    except Exception as e:
-        print("parse error:", e)
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
         if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
             text = event.message.text.strip()
 
-            # Threads投稿（ここでだけimportする）
             if text.startswith("投稿 "):
                 post_text = text.replace("投稿 ", "", 1).strip()
                 try:
-                    import threads_bot
                     threads_bot.post_to_threads(post_text)
                     reply_text(event.reply_token, "Threads投稿OK")
                 except Exception as e:
@@ -97,7 +89,6 @@ async def callback(request: Request):
             if p is not None:
                 db.set("people", str(p))
                 cur_people = p
-
             if o is not None:
                 db.set("oysters", str(o))
                 cur_oysters = o
