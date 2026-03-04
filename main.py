@@ -16,6 +16,10 @@ import threads_bot
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 
+# ★ あなたのLINE user_id を固定したい時は Railway の環境変数に入れる
+# LINE_ADMIN_USER_ID="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+LINE_ADMIN_USER_ID = os.getenv("LINE_ADMIN_USER_ID", "").strip()
+
 app = FastAPI()
 db.init_db()
 
@@ -46,14 +50,17 @@ def reply_text(reply_token: str, text: str):
         )
 
 def parse_people(text: str):
-    # 例: "#3人", "今3人", "3人", "現在 4 人"
-    m = re.search(r"#?\s*(\d+)\s*人", text)
+    m = re.search(r"(\d+)\s*人", text)
     return int(m.group(1)) if m else None
 
 def parse_oysters(text: str):
-    # 例: "#牡蠣10", "牡蠣 20個", "残り15", "残り 15個"
-    m = re.search(r"#?\s*(牡蠣|残り)\s*(\d+)\s*(個)?", text)
+    m = re.search(r"(牡蠣|残り)\s*(\d+)\s*(個)?", text)
     return int(m.group(2)) if m else None
+
+def get_user_id_from_event(event) -> str | None:
+    # event.source.user_id が取れる時だけ取る
+    src = getattr(event, "source", None)
+    return getattr(src, "user_id", None)
 
 @app.post("/callback")
 async def callback(request: Request):
@@ -70,16 +77,26 @@ async def callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-    
-    user_id = getattr(getattr(event, "source", None), "user_id", None)
-    print("DEBUG_USER_ID:", user_id)
+        # ★ user_id を取得してログに出す
+        user_id = get_user_id_from_event(event)
+        print("DEBUG user_id:", user_id)
 
-    if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
+        if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
+            text = event.message.text.strip()
 
-        text = event.message.text.strip()
+            # ★ まずは確認用：送ったら user_id を返信で返す（あなたが1回確認するため）
+            if text in ["userid", "user id", "ID", "id"]:
+                reply_text(event.reply_token, f"あなたのuser_idはこれやで：{user_id}")
+                continue
 
-        if text.startswith("投稿 "):
-            post_text = text.replace("投稿 ", "", 1).strip()
+            # ★（任意）管理者IDを設定したら、管理者以外は更新できない
+            # まだ未設定なら全員OKのまま
+            if LINE_ADMIN_USER_ID and user_id and user_id != LINE_ADMIN_USER_ID:
+                reply_text(event.reply_token, "更新できるのは店主だけやで。")
+                continue
+
+            if text.startswith("投稿 "):
+                post_text = text.replace("投稿 ", "", 1).strip()
                 try:
                     threads_bot.post_to_threads(post_text)
                     reply_text(event.reply_token, "Threads投稿OK")
@@ -100,12 +117,11 @@ async def callback(request: Request):
                 db.set("oysters", str(o))
                 cur_oysters = o
 
-            # 表示コマンド（質問系も拾う）
-            if text.strip() in ["状態", "いま", "今", "status", "何人", "今何人", "人数", "牡蠣", "在庫"]:
-                reply_text(event.reply_token, f"いま {cur_people}人で、牡蠣は {cur_oysters}個やで！")
+            if text in ["状態", "いま", "今", "status"]:
+                reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
             elif (p is not None) or (o is not None):
-                reply_text(event.reply_token, f"更新できたで！ いま {cur_people}人 / 牡蠣 {cur_oysters}個や！")
+                reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
             else:
-                reply_text(event.reply_token, "送る例：『#3人』『#牡蠣10』『状態』やで！")
+                reply_text(event.reply_token, "例：『今3人』『牡蠣20個』『状態』")
 
     return PlainTextResponse("OK")
