@@ -70,12 +70,16 @@ async def callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-    print ("DEBUG user_id:",user_id) 
-        if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
-            text = event.message.text.strip()
 
-            if text.startswith("投稿 "):
-                post_text = text.replace("投稿 ", "", 1).strip()
+    user_id = getattr(getattr(event, "source", None), "user_id", None)
+    print("DEBUG user_id:", user_id)
+
+    if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
+
+        text = event.message.text.strip()
+
+        if text.startswith("投稿 "):
+            post_text = text.replace("投稿 ", "", 1).strip()
                 try:
                     threads_bot.post_to_threads(post_text)
                     reply_text(event.reply_token, "Threads投稿OK")
