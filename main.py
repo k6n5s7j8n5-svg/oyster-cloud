@@ -83,8 +83,8 @@ async def callback(request: Request):
     try:
         events = parser.parse(body_text, signature)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid signature")
-
+        print(”AI exception:",e)
+        REply_text(event.reply_token,"ごめん、今AIの返事がうまく出えへん🙏ちょい後でもっかい送ってな！”）
     for event in events:
 
         if not (isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent)):
