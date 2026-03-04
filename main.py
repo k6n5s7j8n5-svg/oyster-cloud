@@ -46,11 +46,13 @@ def reply_text(reply_token: str, text: str):
         )
 
 def parse_people(text: str):
-    m = re.search(r"(\d+)\s*人", text)
+    # 例: "#3人", "今3人", "3人", "現在 4 人"
+    m = re.search(r"#?\s*(\d+)\s*人", text)
     return int(m.group(1)) if m else None
 
 def parse_oysters(text: str):
-    m = re.search(r"(牡蠣|残り)\s*(\d+)\s*(個)?", text)
+    # 例: "#牡蠣10", "牡蠣 20個", "残り15", "残り 15個"
+    m = re.search(r"#?\s*(牡蠣|残り)\s*(\d+)\s*(個)?", text)
     return int(m.group(2)) if m else None
 
 @app.post("/callback")
@@ -93,11 +95,12 @@ async def callback(request: Request):
                 db.set("oysters", str(o))
                 cur_oysters = o
 
-            if text in ["状態", "いま", "今", "status"]:
-                reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
+            # 表示コマンド（質問系も拾う）
+            if text.strip() in ["状態", "いま", "今", "status", "何人", "今何人", "人数", "牡蠣", "在庫"]:
+                reply_text(event.reply_token, f"いま {cur_people}人で、牡蠣は {cur_oysters}個やで！")
             elif (p is not None) or (o is not None):
-                reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
+                reply_text(event.reply_token, f"更新できたで！ いま {cur_people}人 / 牡蠣 {cur_oysters}個や！")
             else:
-                reply_text(event.reply_token, "例：『今3人』『牡蠣20個』『状態』")
+                reply_text(event.reply_token, "送る例：『#3人』『#牡蠣10』『状態』やで！")
 
     return PlainTextResponse("OK")
