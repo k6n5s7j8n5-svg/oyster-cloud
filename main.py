@@ -70,9 +70,9 @@ async def callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-
+    
     user_id = getattr(getattr(event, "source", None), "user_id", None)
-    print("DEBUG user_id:", user_id)
+    print("DEBUG_USER_ID:", user_id)
 
     if isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent):
 
