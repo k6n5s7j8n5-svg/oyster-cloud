@@ -44,7 +44,6 @@ async def reply_customer(user_text: str, cur_people: int, cur_oysters: int) -> s
         "model": OPENAI_MODEL,
         "instructions": instructions,
         "input": f"{context}\n\nお客さん: {user_text}",
-        "temperature": 0.5,
     }
 
     headers = {
