@@ -12,14 +12,22 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 import db
 import threads_bot
-import ai
+
+# ai.py が無くても起動できるようにする（重要）
+try:
+    import ai
+    AI_OK = True
+except Exception as e:
+    print("AI import failed:", e)
+    ai = None
+    AI_OK = False
 
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 
-# 店主 user_id
-ADMIN_USER_ID = "Ub39b292f75898116dec45dcc8b3bb6cc"
+# 店主 user_id（環境変数でも上書き可に）
+ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ub39b292f75898116dec45dcc8b3bb6cc")
 
 
 app = FastAPI()
@@ -44,12 +52,12 @@ def healthz():
 
 
 def reply_text(reply_token: str, text: str):
+    """LINEに返信"""
     if not config:
         return
 
     with ApiClient(config) as api_client:
         api = MessagingApi(api_client)
-
         api.reply_message(
             ReplyMessageRequest(
                 reply_token=reply_token,
@@ -70,9 +78,24 @@ def parse_oysters(text: str):
     return int(m.group(2)) if m else None
 
 
+def is_status(text: str) -> bool:
+    return text in ["状態", "いま", "今", "status"]
+
+
+async def ai_reply(user_text: str, cur_people: int, cur_oysters: int) -> str:
+    """AI返信（失敗しても例外を投げない）"""
+    if not (AI_OK and ai is not None):
+        return ""
+
+    try:
+        return await ai.reply_customer(user_text, cur_people, cur_oysters)
+    except Exception as e:
+        print("AI exception:", e)
+        return ""
+
+
 @app.post("/callback")
 async def callback(request: Request):
-
     if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET and parser and config):
         raise HTTPException(status_code=500, detail="LINE env not set")
 
@@ -86,95 +109,83 @@ async def callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-
         if not (isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent)):
             continue
 
-        user_id = None
-        if hasattr(event, "source") and hasattr(event.source, "user_id"):
-            user_id = event.source.user_id
-
+        user_id = getattr(getattr(event, "source", None), "user_id", None)
         print("DEBUG user_id:", user_id)
 
         text = event.message.text.strip()
 
+        # 現在値（AIにも使う）
         cur_people = int(db.get("people", "0"))
         cur_oysters = int(db.get("oysters", "0"))
 
         # =========================
-        # 店主以外：AI返信
+        # 店主以外：AI返信（＋状態は全員OK）
         # =========================
         if user_id != ADMIN_USER_ID:
-
-            if text in ["状態", "いま", "今", "status"]:
+            if is_status(text):
                 reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
                 continue
 
-            try:
-                ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
-
-                if ai_text:
-                    reply_text(event.reply_token, ai_text)
-                else:
-                    reply_text(event.reply_token, "今ちょいAIの返事が出えへん🙏")
-
-            except Exception as e:
-                reply_text(event.reply_token, f"AIエラー: {e}")
-
+            ans = await ai_reply(text, cur_people, cur_oysters)
+            if ans:
+                reply_text(event.reply_token, ans)
+            else:
+                reply_text(event.reply_token, "ごめん、今AIの返事がうまく出えへん🙏 ちょい後でもっかい送ってな！")
             continue
 
         # =========================
-        # 店主コマンド
+        # 店主：管理コマンド
         # =========================
 
+        # user_id確認
         if text.lower() in ["id", "userid", "whoami"]:
             reply_text(event.reply_token, f"user_id: {user_id}")
             continue
 
-
-        # Threads投稿
+        # Threads手動投稿
         if text.startswith("投稿 "):
             post_text = text.replace("投稿 ", "", 1).strip()
-
             try:
                 threads_bot.post_to_threads(post_text)
                 reply_text(event.reply_token, "Threads投稿OKやで")
             except Exception as e:
-                reply_text(event.reply_token, f"Threads投稿失敗: {e}")
-
+                print("Threads error:", e)
+                reply_text(event.reply_token, "Threads投稿失敗したわ🙏（ログ見てな）")
             continue
 
-
+        # 人数/牡蠣の更新
         p = parse_people(text)
         o = parse_oysters(text)
 
+        updated = False
         if p is not None:
             db.set("people", str(p))
             cur_people = p
+            updated = True
 
         if o is not None:
             db.set("oysters", str(o))
             cur_oysters = o
+            updated = True
 
-
-        if text in ["状態", "いま", "今", "status"]:
+        if is_status(text):
             reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
+            continue
 
-        elif (p is not None) or (o is not None):
+        if updated:
             reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
+            continue
 
+        # =========================
+        # 店主：コマンド以外はAI返信（テスト用）
+        # =========================
+        ans = await ai_reply(text, cur_people, cur_oysters)
+        if ans:
+            reply_text(event.reply_token, ans)
         else:
-            # ★ 店主でもAI返信できるようにする
-            try:
-    　　　　　　　ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
-
-    　　　　　　　if ai_text:
-        　　　　　　　reply_text(event.reply_token, ai_text)
-    　　　　　　　else:
-       　　　　　　　 reply_text(event.reply_token, "今ちょいAIの返事が出えへん🙏")
-
-　　　　　　　except Exception as e:
-    　　　　　　　print("AI exception:", e)
-    　　　　　　　reply_text(event.reply_token, "ごめん、今AIの返事がうまく出えへん🙏 ちょい後でもっかい送ってな！")
+            reply_text(event.reply_token, "例：『#3人』『#牡蠣10個』『状態』『投稿 文章』")
 
     return PlainTextResponse("OK")
