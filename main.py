@@ -12,7 +12,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 import db
 import threads_bot
-import ai  # ← 追加
+import ai
 
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
@@ -94,12 +94,10 @@ async def callback(request: Request):
         if hasattr(event, "source") and hasattr(event.source, "user_id"):
             user_id = event.source.user_id
 
-        # Railwayログにだけ表示
         print("DEBUG user_id:", user_id)
 
         text = event.message.text.strip()
 
-        # 現在値（AI返信にも使う）
         cur_people = int(db.get("people", "0"))
         cur_oysters = int(db.get("oysters", "0"))
 
@@ -107,29 +105,32 @@ async def callback(request: Request):
         # 店主以外：AI返信
         # =========================
         if user_id != ADMIN_USER_ID:
-            # 状態コマンドだけは誰でも返す（不要なら消してOK）
+
             if text in ["状態", "いま", "今", "status"]:
                 reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
                 continue
 
             try:
                 ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
+
                 if ai_text:
                     reply_text(event.reply_token, ai_text)
                 else:
-                    reply_text(event.reply_token, "今ちょい返事うまく出えへん🙏 店主に聞いてな！")
+                    reply_text(event.reply_token, "今ちょいAIの返事が出えへん🙏")
+
             except Exception as e:
-                reply_text(event.reply_token, f"ごめん、今返事うまく出えへんかった🙏（{e}）")
+                reply_text(event.reply_token, f"AIエラー: {e}")
+
             continue
 
         # =========================
-        # 店主：従来通り
+        # 店主コマンド
         # =========================
 
-        # user_id確認コマンド
         if text.lower() in ["id", "userid", "whoami"]:
             reply_text(event.reply_token, f"user_id: {user_id}")
             continue
+
 
         # Threads投稿
         if text.startswith("投稿 "):
@@ -143,6 +144,7 @@ async def callback(request: Request):
 
             continue
 
+
         p = parse_people(text)
         o = parse_oysters(text)
 
@@ -154,6 +156,7 @@ async def callback(request: Request):
             db.set("oysters", str(o))
             cur_oysters = o
 
+
         if text in ["状態", "いま", "今", "status"]:
             reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
 
@@ -161,6 +164,16 @@ async def callback(request: Request):
             reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
 
         else:
-            reply_text(event.reply_token, "例：『#3人』『#牡蠣10個』『状態』『投稿 文章』")
+            # ★ 店主でもAI返信できるようにする
+            try:
+                ai_text = await ai.reply_customer(text, cur_people, cur_oysters)
+
+                if ai_text:
+                    reply_text(event.reply_token, ai_text)
+                else:
+                    reply_text(event.reply_token, "AI返事できへんかった🙏")
+
+            except Exception as e:
+                reply_text(event.reply_token, f"AIエラー: {e}")
 
     return PlainTextResponse("OK")
