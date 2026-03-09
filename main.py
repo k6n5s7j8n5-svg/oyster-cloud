@@ -16,21 +16,18 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 import db
 import threads_bot
 
-# AIは落ちてもサーバーを落とさない（重要）
 try:
     import ai
     AI_OK = True
 except Exception as e:
-    print("AI import failed:", e)
-    ai = None
+    print("AI import error:", e)
     AI_OK = False
 
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 
-# 店主 user_id（環境変数で上書き可）
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ub39b292f75898116dec45dcc8b3bb6cc")
+ADMIN_USER_ID = "Ub39b292f75898116dec45dcc8b3bb6cc"
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -39,6 +36,7 @@ db.init_db()
 
 parser = None
 config = None
+
 if LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET:
     parser = WebhookParser(LINE_CHANNEL_SECRET)
     config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
@@ -57,8 +55,10 @@ def healthz():
 def reply_text(reply_token: str, text: str):
     if not config:
         return
+
     with ApiClient(config) as api_client:
         api = MessagingApi(api_client)
+
         api.reply_message(
             ReplyMessageRequest(
                 reply_token=reply_token,
@@ -67,201 +67,257 @@ def reply_text(reply_token: str, text: str):
         )
 
 
-def push_text(to_user_id: str, text: str):
-    """店主にプッシュ通知（reply_token不要）"""
-    if not config or not to_user_id:
+def push_text(user_id: str, text: str):
+    if not config:
         return
-    try:
-        with ApiClient(config) as api_client:
-            api = MessagingApi(api_client)
-            api.push_message(
-                PushMessageRequest(
-                    to=to_user_id,
-                    messages=[TextMessage(text=text)]
-                )
+
+    with ApiClient(config) as api_client:
+        api = MessagingApi(api_client)
+
+        api.push_message(
+            PushMessageRequest(
+                to=user_id,
+                messages=[TextMessage(text=text)]
             )
-    except Exception as e:
-        print("push_message error:", e)
+        )
 
 
-def get_display_name(user_id: str) -> str:
-    """LINE表示名（取れない場合は空）"""
-    if not config or not user_id:
-        return ""
+def get_display_name(user_id: str):
     try:
         with ApiClient(config) as api_client:
             api = MessagingApi(api_client)
             profile = api.get_profile(user_id)
-            return getattr(profile, "display_name", "") or ""
-    except Exception as e:
-        # グループ等で取れないことがある
-        print("get_profile error:", e)
-        return ""
+            return profile.display_name
+    except:
+        return "名前不明"
 
 
-def parse_people(text: str):
+def parse_people(text):
     text = text.replace("#", "")
-    m = re.search(r"(\d+)\s*人", text)
+    m = re.search(r"(\d+)人", text)
     return int(m.group(1)) if m else None
 
 
-def parse_oysters(text: str):
+def parse_oysters(text):
     text = text.replace("#", "")
-    m = re.search(r"(牡蠣|残り)\s*(\d+)\s*(個)?", text)
+    m = re.search(r"(牡蠣|残り)(\d+)", text)
     return int(m.group(2)) if m else None
 
 
-def is_status(text: str) -> bool:
-    return text in ["状態", "いま", "今", "status"]
+def is_status(text):
+    return text in ["状態", "今", "いま", "status"]
 
 
-def business_is_open(jst_now: datetime) -> bool:
-    """00:00〜15:59 閉店 / 16:00〜23:59 通常"""
-    return 16 <= jst_now.hour <= 23
+def is_open(now):
+    return 16 <= now.hour <= 23
 
 
-def daily_reset_if_needed(jst_now: datetime):
-    """日付が変わったら people/oysters を0に戻す"""
-    today = jst_now.strftime("%Y-%m-%d")
-    last_date = db.get("last_date", "")
-    if last_date != today:
+def reset_if_new_day(now):
+    today = now.strftime("%Y-%m-%d")
+    last = db.get("last_date", "")
+
+    if today != last:
         db.set("people", "0")
         db.set("oysters", "0")
         db.set("last_date", today)
-        print("Daily reset:", today)
+        print("日付リセット")
 
 
-def is_inventory_or_people_question(text: str) -> bool:
-    """牡蠣個数 / 人数の問い合わせっぽい文か判定（雑に強め）"""
-    t = text.strip().lower().replace("？", "").replace("?", "")
-    # 人数系
-    if ("何人" in t) or ("なんにん" in t) or ("混" in t) or ("空い" in t) or ("店内" in t):
+def inventory_question(text):
+
+    t = text.lower()
+
+    if "牡蠣" in t:
         return True
-    # 牡蠣/個数系
-    if ("牡蠣" in t) or ("かき" in t) or ("何個" in t) or ("なんこ" in t) or ("残り" in t):
+    if "何個" in t:
         return True
+    if "残り" in t:
+        return True
+    if "何人" in t:
+        return True
+    if "混" in t:
+        return True
+
     return False
 
 
-async def safe_ai_reply(user_text: str, cur_people: int, cur_oysters: int) -> str:
-    if not (AI_OK and ai is not None):
+async def ai_reply(text, people, oysters):
+
+    if not AI_OK:
         return ""
+
     try:
-        return await ai.reply_customer(user_text, cur_people, cur_oysters)
+        return await ai.reply_customer(text, people, oysters)
     except Exception as e:
-        print("AI exception:", e)
+        print("AI error", e)
         return ""
 
 
 @app.post("/callback")
 async def callback(request: Request):
-    if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET and parser and config):
-        raise HTTPException(status_code=500, detail="LINE env not set")
+
+    if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET):
+        raise HTTPException(status_code=500)
 
     signature = request.headers.get("X-Line-Signature", "")
+
     body = await request.body()
     body_text = body.decode("utf-8")
 
-    try:
-        events = parser.parse(body_text, signature)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    events = parser.parse(body_text, signature)
 
-    # JST now（ここで日付リセットしておく）
-    jst_now = datetime.now(JST)
-    daily_reset_if_needed(jst_now)
-    is_open_now = business_is_open(jst_now)
+    now = datetime.now(JST)
+
+    reset_if_new_day(now)
 
     for event in events:
-        if not (isinstance(event, MessageEvent) and isinstance(event.message, TextMessageContent)):
+
+        if not isinstance(event, MessageEvent):
             continue
 
-        user_id = getattr(getattr(event, "source", None), "user_id", None)
+        if not isinstance(event.message, TextMessageContent):
+            continue
+
+        user_id = event.source.user_id
         text = event.message.text.strip()
 
-        print("DEBUG user_id:", user_id)
-        print("DEBUG text:", text)
+        people = int(db.get("people", "0"))
+        oysters = int(db.get("oysters", "0"))
 
-        cur_people = int(db.get("people", "0"))
-        cur_oysters = int(db.get("oysters", "0"))
+        owner = user_id == ADMIN_USER_ID
 
-        is_owner = (user_id == ADMIN_USER_ID)
+        print("user:", user_id, text)
 
-        # =====================
-        # 客（店主以外）
-        # =====================
-        if not is_owner:
-            # ① 人数/牡蠣の問い合わせが来たら店主に通知（表示名も）
-            if is_inventory_or_people_question(text):
-                name = get_display_name(user_id) or "（表示名不明）"
+        # ===== 客 =====
+
+        if not owner:
+
+            if inventory_question(text):
+
+                name = get_display_name(user_id)
+
                 push_text(
                     ADMIN_USER_ID,
-                    f"【問い合わせ】{name}\nuser_id: {user_id}\n内容: {text}\n現在: {cur_people}人 / 牡蠣: {cur_oysters}個"
+                    f"問い合わせ\n{name}\n{text}\n人数:{people}\n牡蠣:{oysters}"
                 )
 
-            # ② 閉店時間は固定で閉店返信（AI呼ばない）
-            #    ※「客だけ」閉店扱いでOK、という要件通り
-            if not is_open_now:
-                reply_text(event.reply_token, "ただいま閉店中やで🙏 16時から開くで！")
+            if not is_open(now):
+
+                reply_text(
+                    event.reply_token,
+                    "ただいま閉店中やで🙏16時から開くで！"
+                )
+
                 continue
 
-            # ③ 状態コマンド（営業時間中）
+            # ===== 高速返信 =====
+
+            t = text.lower()
+
+            if "何人" in t or "混" in t:
+
+                reply_text(
+                    event.reply_token,
+                    f"今は店内{people}人くらいやで！"
+                )
+
+                continue
+
+            if "牡蠣" in t or "何個" in t or "残り" in t:
+
+                if oysters == 0:
+
+                    reply_text(
+                        event.reply_token,
+                        "今日は牡蠣完売してもうた🙏また明日な！"
+                    )
+
+                else:
+
+                    reply_text(
+                        event.reply_token,
+                        f"牡蠣は残り{oysters}個くらいやで🦪"
+                    )
+
+                continue
+
             if is_status(text):
-                reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
+
+                reply_text(
+                    event.reply_token,
+                    f"現在：{people}人 / 牡蠣{oysters}個"
+                )
+
                 continue
 
-            # ④ AI返信（営業時間中）
-            ans = await safe_ai_reply(text, cur_people, cur_oysters)
+            # ===== AI =====
+
+            ans = await ai_reply(text, people, oysters)
+
             if ans:
+
                 reply_text(event.reply_token, ans)
+
             else:
-                reply_text(event.reply_token, "ごめん、今AIの返事がうまく出えへん🙏 ちょい後でもっかい送ってな！")
+
+                reply_text(
+                    event.reply_token,
+                    "ちょっと今AI調子悪い🙏"
+                )
+
             continue
 
-        # =====================
-        # 店主（管理コマンド）
-        # ※店主は閉店中でも更新できる
-        # =====================
+        # ===== 店主 =====
 
-        if text.lower() in ["id", "userid", "whoami"]:
-            reply_text(event.reply_token, f"user_id: {user_id}")
-            continue
-
-        # Threads投稿（今は中身の方式はthreads_bot側に任せる）
         if text.startswith("投稿 "):
-            post_text = text.replace("投稿 ", "", 1).strip()
-            try:
-                threads_bot.post_to_threads(post_text)
-                reply_text(event.reply_token, "Threads投稿OKやで")
-            except Exception as e:
-                print("Threads error:", e)
-                reply_text(event.reply_token, "Threads投稿失敗したわ🙏（ログ見てな）")
+
+            msg = text.replace("投稿 ", "")
+
+            threads_bot.post_to_threads(msg)
+
+            reply_text(
+                event.reply_token,
+                "Threads投稿OK"
+            )
+
             continue
 
         p = parse_people(text)
         o = parse_oysters(text)
 
-        updated = False
         if p is not None:
+
             db.set("people", str(p))
-            cur_people = p
-            updated = True
+            people = p
 
         if o is not None:
+
             db.set("oysters", str(o))
-            cur_oysters = o
-            updated = True
+            oysters = o
+
+        if p or o:
+
+            reply_text(
+                event.reply_token,
+                f"更新OK\n人数:{people}\n牡蠣:{oysters}"
+            )
+
+            continue
 
         if is_status(text):
-            reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
+
+            reply_text(
+                event.reply_token,
+                f"現在：{people}人 / 牡蠣{oysters}個"
+            )
+
             continue
 
-        if updated:
-            reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
-            continue
+        ans = await ai_reply(text, people, oysters)
 
-        # 店主はコマンド以外AI（テスト用）
-        ans = await safe_ai_reply(text, cur_people, cur_oysters)
-        reply_text(event.reply_token, ans or "例：『#3人』『#牡蠣10個』『状態』『投稿 文章』")
+        reply_text(
+            event.reply_token,
+            ans or "例: #3人 #牡蠣50"
+        )
 
     return PlainTextResponse("OK")
