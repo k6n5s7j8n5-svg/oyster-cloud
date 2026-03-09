@@ -31,6 +31,8 @@ ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ub39b292f75898116dec45dcc8b3bb6cc")
 
 JST = ZoneInfo("Asia/Tokyo")
 
+REVIEW_URL = "https://g.page/r/CXCoWU0ghRcQEBM/review"
+
 SHOP_HOURS_TEXT = "営業時間は16:00〜24:00やで！\n火曜日は定休日やで！"
 SHOP_ADDRESS_TEXT = "大阪市福島区福島5丁目12-17\nサンフラット南側1F\n黄色い提灯が目印やで！"
 SHOP_CLOSED_TEXT = "ただいま閉店中やで🙏 16時から開くで！"
@@ -106,6 +108,25 @@ def get_display_name(user_id: str) -> str:
         return "名前不明"
 
 
+def is_first_user(user_id: str) -> bool:
+    key = f"visited:{user_id}"
+    visited = db.get(key, "")
+    if visited:
+        return False
+    db.set(key, "1")
+    return True
+
+
+def send_review_if_first(user_id: str):
+    if is_first_user(user_id):
+        push_text(
+            user_id,
+            "はじめまして！キヨリト大阪福島店です🦪\n\n"
+            "もしよかったらGoogle口コミもお願いできます🙏\n"
+            f"{REVIEW_URL}"
+        )
+
+
 def parse_people(text: str):
     text = text.replace("#", "")
     m = re.search(r"(\d+)\s*人", text)
@@ -123,10 +144,8 @@ def is_status(text: str) -> bool:
 
 
 def is_open(now: datetime) -> bool:
-    # 火曜定休
     if now.weekday() == 1:
         return False
-    # 16:00〜23:59 営業
     return 16 <= now.hour <= 23
 
 
@@ -230,11 +249,12 @@ async def callback(request: Request):
         print("DEBUG user:", user_id)
         print("DEBUG text:", text)
 
-        # =====================
-        # 客（店主以外）
-        # =====================
+        # 客
         if not owner:
-            # 問い合わせ通知
+            # 新規ユーザーには口コミURLを送る
+            send_review_if_first(user_id)
+
+            # 牡蠣 / 人数問い合わせは店主に通知
             if needs_notify_inventory_or_people(text):
                 name = get_display_name(user_id)
                 push_text(
@@ -242,12 +262,12 @@ async def callback(request: Request):
                     f"【問い合わせ】\n{name}\nuser_id: {user_id}\n内容: {text}\n現在: {people}人 / 牡蠣: {oysters}個"
                 )
 
-            # 住所は営業時間外でも即返し
+            # 住所
             if is_address_question(text):
                 reply_text(event.reply_token, SHOP_ADDRESS_TEXT)
                 continue
 
-            # 営業時間は営業時間外でも即返し
+            # 営業時間
             if is_hours_question(text):
                 if is_holiday(now):
                     reply_text(
@@ -266,12 +286,12 @@ async def callback(request: Request):
                     )
                 continue
 
-            # 定休日も営業時間外でも即返し
+            # 定休日
             if is_holiday_question(text):
                 reply_text(event.reply_token, "定休日は火曜日やで！")
                 continue
 
-            # 火曜日は定休日
+            # 定休日そのもの
             if is_holiday(now):
                 reply_text(event.reply_token, SHOP_HOLIDAY_TEXT)
                 continue
@@ -281,7 +301,7 @@ async def callback(request: Request):
                 reply_text(event.reply_token, SHOP_CLOSED_TEXT)
                 continue
 
-            # 状態確認
+            # 状態
             if is_status(text):
                 reply_text(event.reply_token, f"現在：{people}人 / 牡蠣：{oysters}個")
                 continue
@@ -307,10 +327,7 @@ async def callback(request: Request):
                 reply_text(event.reply_token, "ちょっと今AI調子悪い🙏")
             continue
 
-        # =====================
         # 店主
-        # =====================
-
         if text.lower() in ["id", "userid", "whoami"]:
             reply_text(event.reply_token, f"user_id: {user_id}")
             continue
@@ -329,6 +346,7 @@ async def callback(request: Request):
         o = parse_oysters(text)
 
         updated = False
+
         if p is not None:
             db.set("people", str(p))
             people = p
@@ -347,7 +365,6 @@ async def callback(request: Request):
             reply_text(event.reply_token, f"現在：{people}人 / 牡蠣：{oysters}個")
             continue
 
-        # 店主も固定情報は即返し
         if is_address_question(text):
             reply_text(event.reply_token, SHOP_ADDRESS_TEXT)
             continue
@@ -362,5 +379,5 @@ async def callback(request: Request):
 
         ans = await safe_ai_reply(text, people, oysters)
         reply_text(event.reply_token, ans or "例：#3人 #牡蠣50")
-    
+
     return PlainTextResponse("OK")
