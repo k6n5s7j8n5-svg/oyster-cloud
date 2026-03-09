@@ -19,8 +19,7 @@ import threads_bot
 try:
     import ai
     AI_OK = True
-except Exception as e:
-    print("AI import error:", e)
+except:
     AI_OK = False
 
 
@@ -34,32 +33,15 @@ JST = ZoneInfo("Asia/Tokyo")
 app = FastAPI()
 db.init_db()
 
-parser = None
-config = None
-
-if LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET:
-    parser = WebhookParser(LINE_CHANNEL_SECRET)
-    config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+parser = WebhookParser(LINE_CHANNEL_SECRET)
+config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 
-@app.get("/")
-def root():
-    return {"ok": True}
-
-
-@app.get("/healthz")
-def healthz():
-    return {"status": "healthy"}
-
-
-def reply_text(reply_token: str, text: str):
-    if not config:
-        return
+def reply_text(reply_token, text):
 
     with ApiClient(config) as api_client:
-        api = MessagingApi(api_client)
 
-        api.reply_message(
+        MessagingApi(api_client).reply_message(
             ReplyMessageRequest(
                 reply_token=reply_token,
                 messages=[TextMessage(text=text)]
@@ -67,14 +49,11 @@ def reply_text(reply_token: str, text: str):
         )
 
 
-def push_text(user_id: str, text: str):
-    if not config:
-        return
+def push_text(user_id, text):
 
     with ApiClient(config) as api_client:
-        api = MessagingApi(api_client)
 
-        api.push_message(
+        MessagingApi(api_client).push_message(
             PushMessageRequest(
                 to=user_id,
                 messages=[TextMessage(text=text)]
@@ -82,63 +61,56 @@ def push_text(user_id: str, text: str):
         )
 
 
-def get_display_name(user_id: str):
+def get_name(user_id):
+
     try:
+
         with ApiClient(config) as api_client:
-            api = MessagingApi(api_client)
-            profile = api.get_profile(user_id)
+
+            profile = MessagingApi(api_client).get_profile(user_id)
+
             return profile.display_name
+
     except:
+
         return "名前不明"
 
 
 def parse_people(text):
+
     text = text.replace("#", "")
+
     m = re.search(r"(\d+)人", text)
+
     return int(m.group(1)) if m else None
 
 
 def parse_oysters(text):
+
     text = text.replace("#", "")
+
     m = re.search(r"(牡蠣|残り)(\d+)", text)
+
     return int(m.group(2)) if m else None
 
 
-def is_status(text):
-    return text in ["状態", "今", "いま", "status"]
-
-
 def is_open(now):
+
+    if now.weekday() == 1:
+        return False
+
     return 16 <= now.hour <= 23
 
 
-def reset_if_new_day(now):
-    today = now.strftime("%Y-%m-%d")
-    last = db.get("last_date", "")
+def reset_day(now):
 
-    if today != last:
+    today = now.strftime("%Y-%m-%d")
+
+    if db.get("last_date") != today:
+
         db.set("people", "0")
         db.set("oysters", "0")
         db.set("last_date", today)
-        print("日付リセット")
-
-
-def inventory_question(text):
-
-    t = text.lower()
-
-    if "牡蠣" in t:
-        return True
-    if "何個" in t:
-        return True
-    if "残り" in t:
-        return True
-    if "何人" in t:
-        return True
-    if "混" in t:
-        return True
-
-    return False
 
 
 async def ai_reply(text, people, oysters):
@@ -148,27 +120,22 @@ async def ai_reply(text, people, oysters):
 
     try:
         return await ai.reply_customer(text, people, oysters)
-    except Exception as e:
-        print("AI error", e)
+    except:
         return ""
 
 
 @app.post("/callback")
 async def callback(request: Request):
 
-    if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET):
-        raise HTTPException(status_code=500)
-
-    signature = request.headers.get("X-Line-Signature", "")
+    signature = request.headers.get("X-Line-Signature")
 
     body = await request.body()
-    body_text = body.decode("utf-8")
 
-    events = parser.parse(body_text, signature)
+    events = parser.parse(body.decode(), signature)
 
     now = datetime.now(JST)
 
-    reset_if_new_day(now)
+    reset_day(now)
 
     for event in events:
 
@@ -179,40 +146,55 @@ async def callback(request: Request):
             continue
 
         user_id = event.source.user_id
+
         text = event.message.text.strip()
 
         people = int(db.get("people", "0"))
+
         oysters = int(db.get("oysters", "0"))
 
         owner = user_id == ADMIN_USER_ID
-
-        print("user:", user_id, text)
 
         # ===== 客 =====
 
         if not owner:
 
-            if inventory_question(text):
+            t = text.lower()
 
-                name = get_display_name(user_id)
+            # 通知
+
+            if "牡蠣" in t or "何人" in t or "混" in t:
+
+                name = get_name(user_id)
 
                 push_text(
                     ADMIN_USER_ID,
-                    f"問い合わせ\n{name}\n{text}\n人数:{people}\n牡蠣:{oysters}"
+                    f"問い合わせ\n{name}\n{text}"
                 )
+
+            # 定休日
+
+            if now.weekday() == 1:
+
+                reply_text(
+                    event.reply_token,
+                    "今日は定休日（火曜日）やで🙏"
+                )
+
+                continue
+
+            # 営業時間
 
             if not is_open(now):
 
                 reply_text(
                     event.reply_token,
-                    "ただいま閉店中やで🙏16時から開くで！"
+                    "営業時間は16:00〜24:00やで！"
                 )
 
                 continue
 
             # ===== 高速返信 =====
-
-            t = text.lower()
 
             if "何人" in t or "混" in t:
 
@@ -229,7 +211,7 @@ async def callback(request: Request):
 
                     reply_text(
                         event.reply_token,
-                        "今日は牡蠣完売してもうた🙏また明日な！"
+                        "今日は牡蠣完売してもうた🙏"
                     )
 
                 else:
@@ -241,11 +223,29 @@ async def callback(request: Request):
 
                 continue
 
-            if is_status(text):
+            if "営業時間" in t or "何時" in t:
 
                 reply_text(
                     event.reply_token,
-                    f"現在：{people}人 / 牡蠣{oysters}個"
+                    "営業時間は16:00〜24:00やで！"
+                )
+
+                continue
+
+            if "定休日" in t or "休み" in t:
+
+                reply_text(
+                    event.reply_token,
+                    "火曜日が定休日やで！"
+                )
+
+                continue
+
+            if "場所" in t or "どこ" in t or "住所" in t:
+
+                reply_text(
+                    event.reply_token,
+                    "大阪市福島区福島5丁目12-17\nサンフラット南側1F\n黄色い提灯が目印やで！"
                 )
 
                 continue
@@ -283,6 +283,7 @@ async def callback(request: Request):
             continue
 
         p = parse_people(text)
+
         o = parse_oysters(text)
 
         if p is not None:
@@ -304,20 +305,11 @@ async def callback(request: Request):
 
             continue
 
-        if is_status(text):
-
-            reply_text(
-                event.reply_token,
-                f"現在：{people}人 / 牡蠣{oysters}個"
-            )
-
-            continue
-
         ans = await ai_reply(text, people, oysters)
 
         reply_text(
             event.reply_token,
-            ans or "例: #3人 #牡蠣50"
+            ans or "例：#3人 #牡蠣50"
         )
 
     return PlainTextResponse("OK")
