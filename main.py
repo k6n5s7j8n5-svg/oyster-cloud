@@ -1,225 +1,794 @@
 import os
 import re
-from datetime import datetime
-from zoneinfo import ZoneInfo
+import json
+import random
+import sqlite3
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Tuple
 
+import requests
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 
 from linebot.v3.webhook import WebhookParser
+from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi,
-    ReplyMessageRequest, PushMessageRequest, TextMessage
+    Configuration,
+    ApiClient,
+    MessagingApi,
+    ReplyMessageRequest,
+    PushMessageRequest,
+    TextMessage,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-import db
-import threads_bot
 
-try:
-    import ai
-    AI_OK = True
-except Exception as e:
-    print("AI import error:", e)
-    AI_OK = False
-    ai = None
+# =========================================================
+# 基本設定
+# =========================================================
 
+JST = timezone(timedelta(hours=9))
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
-ADMIN_USER_ID = os.getenv("ADMIN_USER_ID", "Ub39b292f75898116dec45dcc8b3bb6cc")
 
-JST = ZoneInfo("Asia/Tokyo")
+THREADS_ACCESS_TOKEN = os.getenv("THREADS_ACCESS_TOKEN", "")
+THREADS_USER_ID = os.getenv("THREADS_USER_ID", "")
 
-REVIEW_URL = "https://g.page/r/CXCoWU0ghRcQEBM/review"
+OWNER_USER_ID = os.getenv("OWNER_USER_ID", "")  # 管理者のLINE userId
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+DB_PATH = os.getenv("DB_PATH", "oyster_cloud.db")
 
-SHOP_HOURS_TEXT = "営業時間は16:00〜24:00やで！\n火曜日は定休日やで！"
-SHOP_ADDRESS_TEXT = "大阪市福島区福島5丁目12-17\nサンフラット南側1F\n黄色い提灯が目印やで！"
-SHOP_CLOSED_TEXT = "ただいま閉店中やで🙏 16時から開くで！"
-SHOP_HOLIDAY_TEXT = "今日は定休日（火曜日）やで🙏"
-SHOP_SOLD_OUT_TEXT = "今日は牡蠣完売してもうた🙏 また明日待ってるで！"
+SHOP_NAME = os.getenv("SHOP_NAME", "キヨリト大阪福島店")
+SHOP_AREA = os.getenv("SHOP_AREA", "大阪福島")
+REVIEW_URL = os.getenv(
+    "REVIEW_URL",
+    "https://g.page/r/CXCoWU0ghRcQEBM/review"
+)
+
+# 営業時間
+OPEN_HOUR = int(os.getenv("OPEN_HOUR", "16"))
+CLOSE_HOUR = int(os.getenv("CLOSE_HOUR", "24"))  # 24で0時扱い
+
+# Threads投稿時刻
+POST_SLOTS = {
+    1: "12:00",
+    2: "18:00",
+    3: "22:30",
+}
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("oyster_cloud")
 
 app = FastAPI()
-db.init_db()
 
-parser = None
-config = None
+parser: Optional[WebhookParser] = None
+messaging_api: Optional[MessagingApi] = None
 
 if LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET:
+    configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+    api_client = ApiClient(configuration)
+    messaging_api = MessagingApi(api_client)
     parser = WebhookParser(LINE_CHANNEL_SECRET)
-    config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 
-@app.get("/")
-def root():
-    return {"ok": True}
+# =========================================================
+# 時刻・営業判定
+# =========================================================
+
+def now_jst() -> datetime:
+    return datetime.now(JST)
 
 
-@app.get("/healthz")
-def healthz():
-    return {"status": "healthy"}
+def today_str() -> str:
+    return now_jst().strftime("%Y-%m-%d")
 
 
-def reply_text(reply_token: str, text: str):
-    if not config:
-        return
-    with ApiClient(config) as api_client:
-        api = MessagingApi(api_client)
-        api.reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=text)]
-            )
+def current_hm() -> str:
+    return now_jst().strftime("%H:%M")
+
+
+def is_open_now(dt: Optional[datetime] = None) -> bool:
+    dt = dt or now_jst()
+    hour = dt.hour
+    # 16:00-23:59 営業 / 00:00-15:59 営業外
+    return OPEN_HOUR <= hour < 24
+
+
+# =========================================================
+# DB
+# =========================================================
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         )
+    """)
 
-
-def push_text(user_id: str, text: str):
-    if not config or not user_id:
-        return
-    try:
-        with ApiClient(config) as api_client:
-            api = MessagingApi(api_client)
-            api.push_message(
-                PushMessageRequest(
-                    to=user_id,
-                    messages=[TextMessage(text=text)]
-                )
-            )
-    except Exception as e:
-        print("push_message error:", e)
-
-
-def get_display_name(user_id: str) -> str:
-    if not config or not user_id:
-        return "名前不明"
-    try:
-        cached = db.get(f"name:{user_id}", "")
-        if cached:
-            return cached
-
-        with ApiClient(config) as api_client:
-            api = MessagingApi(api_client)
-            profile = api.get_profile(user_id)
-            name = getattr(profile, "display_name", "") or "名前不明"
-            db.set(f"name:{user_id}", name)
-            return name
-    except Exception as e:
-        print("get_profile error:", e)
-        return "名前不明"
-
-
-def is_first_user(user_id: str) -> bool:
-    key = f"visited:{user_id}"
-    visited = db.get(key, "")
-    if visited:
-        return False
-    db.set(key, "1")
-    return True
-
-
-def send_review_if_first(user_id: str):
-    if is_first_user(user_id):
-        push_text(
-            user_id,
-            "はじめまして！キヨリト大阪福島店です🦪\n\n"
-            "もしよかったらGoogle口コミもお願いできます🙏\n"
-            f"{REVIEW_URL}"
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS line_users (
+            user_id TEXT PRIMARY KEY,
+            display_name TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            review_sent INTEGER NOT NULL DEFAULT 0
         )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS daily_threads_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_date TEXT NOT NULL,
+            slot INTEGER NOT NULL,
+            post_text TEXT NOT NULL,
+            posted INTEGER NOT NULL DEFAULT 0,
+            posted_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(post_date, slot)
+        )
+    """)
+
+    # 初期値
+    now = now_jst().isoformat()
+    defaults = {
+        "people_count": "0",
+        "oyster_count": "0",
+        "last_reset_date": today_str(),
+    }
+    for k, v in defaults.items():
+        cur.execute("""
+            INSERT OR IGNORE INTO app_state (key, value, updated_at)
+            VALUES (?, ?, ?)
+        """, (k, v, now))
+
+    conn.commit()
+    conn.close()
 
 
-def parse_people(text: str):
-    text = text.replace("#", "")
-    m = re.search(r"(\d+)\s*人", text)
-    return int(m.group(1)) if m else None
+@app.on_event("startup")
+def on_startup():
+    init_db()
+    logger.info("DB initialized")
 
 
-def parse_oysters(text: str):
-    text = text.replace("#", "")
-    m = re.search(r"(牡蠣|残り)\s*(\d+)\s*(個)?", text)
-    return int(m.group(2)) if m else None
+def upsert_state(key: str, value: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    cur.execute("""
+        INSERT INTO app_state (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at
+    """, (key, value, now))
+    conn.commit()
+    conn.close()
 
 
-def is_status(text: str) -> bool:
-    return text in ["状態", "今", "いま", "status"]
+def get_state(key: str, default: Optional[str] = None) -> Optional[str]:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM app_state WHERE key = ?", (key,))
+    row = cur.fetchone()
+    conn.close()
+    return row["value"] if row else default
 
 
-def is_open(now: datetime) -> bool:
-    if now.weekday() == 1:
-        return False
-    return 16 <= now.hour <= 23
+def maybe_daily_reset():
+    """日付が変わっていたら人数・牡蠣数を0に戻す"""
+    last_reset_date = get_state("last_reset_date", "")
+    today = today_str()
+    if last_reset_date != today:
+        upsert_state("people_count", "0")
+        upsert_state("oyster_count", "0")
+        upsert_state("last_reset_date", today)
+        logger.info("Daily reset executed. people_count=0 oyster_count=0")
 
 
-def is_holiday(now: datetime) -> bool:
-    return now.weekday() == 1
+def set_people_count(n: int):
+    upsert_state("people_count", str(max(0, n)))
 
 
-def reset_if_new_day(now: datetime):
-    today = now.strftime("%Y-%m-%d")
-    last_date = db.get("last_date", "")
-    if last_date != today:
-        db.set("people", "0")
-        db.set("oysters", "0")
-        db.set("last_date", today)
-        print("日付変わったのでリセット:", today)
+def set_oyster_count(n: int):
+    upsert_state("oyster_count", str(max(0, n)))
 
 
-def needs_notify_inventory_or_people(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    if "牡蠣" in t or "かき" in t or "何個" in t or "なんこ" in t or "残り" in t:
-        return True
-    if "何人" in t or "なんにん" in t or "混" in t or "空い" in t or "店内" in t:
-        return True
-    return False
+def get_people_count() -> int:
+    maybe_daily_reset()
+    return int(get_state("people_count", "0") or 0)
 
 
-def is_address_question(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    return ("住所" in t) or ("場所" in t) or ("どこ" in t) or ("行き方" in t)
+def get_oyster_count() -> int:
+    maybe_daily_reset()
+    return int(get_state("oyster_count", "0") or 0)
 
 
-def is_hours_question(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    return (
-        ("営業時間" in t)
-        or ("何時" in t)
-        or ("なんじ" in t)
-        or ("オープン" in t)
-        or ("開店" in t)
-        or ("閉店" in t)
-        or ("何時から" in t)
-        or ("何時まで" in t)
+def save_or_update_user(user_id: str, display_name: str = ""):
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    cur.execute("""
+        INSERT INTO line_users (user_id, display_name, first_seen_at, last_seen_at, review_sent)
+        VALUES (?, ?, ?, ?, 0)
+        ON CONFLICT(user_id) DO UPDATE SET
+            display_name = CASE
+                WHEN excluded.display_name != '' THEN excluded.display_name
+                ELSE line_users.display_name
+            END,
+            last_seen_at = excluded.last_seen_at
+    """, (user_id, display_name, now, now))
+    conn.commit()
+    conn.close()
+
+
+def get_user(user_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM line_users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def mark_review_sent(user_id: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE line_users
+        SET review_sent = 1
+        WHERE user_id = ?
+    """, (user_id,))
+    conn.commit()
+    conn.close()
+
+
+# =========================================================
+# LINE送受信
+# =========================================================
+
+def ensure_line_ready():
+    if not messaging_api:
+        raise RuntimeError("LINE Messaging API is not configured.")
+
+
+def reply_line(reply_token: str, text: str):
+    ensure_line_ready()
+    messaging_api.reply_message(
+        ReplyMessageRequest(
+            reply_token=reply_token,
+            messages=[TextMessage(text=text)]
+        )
     )
 
 
-def is_holiday_question(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    return ("定休日" in t) or ("休み" in t) or ("休みの日" in t)
+def push_line(user_id: str, text: str):
+    ensure_line_ready()
+    messaging_api.push_message(
+        PushMessageRequest(
+            to=user_id,
+            messages=[TextMessage(text=text)]
+        )
+    )
 
 
-def is_people_question(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    return ("何人" in t) or ("なんにん" in t) or ("混" in t) or ("空い" in t) or ("店内" in t)
+# =========================================================
+# Threads投稿文生成
+# =========================================================
+
+OPENING_WORDS = [
+    "今日はなんだか",
+    "仕事終わりに",
+    "夜のごはんで",
+    "ふらっと一杯の気分なら",
+    "週末のご褒美に",
+    "海の旨味を欲してるなら",
+    "今夜の一軒目に",
+    "ちょい飲みしたい夜は",
+]
+
+OYSTER_WORDS = [
+    "ぷりっとした牡蠣",
+    "ミルキーな牡蠣",
+    "レモンが合う牡蠣",
+    "海の旨味が詰まった牡蠣",
+    "焼きたての牡蠣",
+    "ひと口で幸せになる牡蠣",
+    "香りまでたまらない牡蠣",
+    "食欲を刺激する牡蠣",
+]
+
+SCENE_WORDS = [
+    "ハイボールと合わせたくなる",
+    "ビールがすすむ",
+    "ついもう1個いきたくなる",
+    "一口目からテンション上がる",
+    "今夜食べたくなる",
+    "ふらっと寄って食べたくなる",
+    "誰かとシェアしたくなる",
+    "1人でも楽しみたくなる",
+]
+
+CTA_WORDS = [
+    "大阪福島で牡蠣食べるなら、今夜どうですか。🦪",
+    "大阪福島で牡蠣の気分なら、ふらっとどうぞ。🦪",
+    "大阪福島で牡蠣を欲してる人、待ってます。🦪",
+    "大阪福島で牡蠣を楽しみたい夜に。🦪",
+    "大阪福島で牡蠣食べたい人に届けたい。🦪",
+]
+
+QUESTION_PATTERNS = [
+    "生牡蠣派？焼き牡蠣派？",
+    "レモン派？そのまま派？",
+    "1個で止まる派？止まらん派？",
+    "ハイボール派？ビール派？",
+]
+
+EXTRA_PHRASES = [
+    "口いっぱいに海の旨味が広がります。",
+    "香りだけで一杯いけそうです。",
+    "ひと口食べたら気分が変わります。",
+    "今夜の正解ってこれかもしれません。",
+    "食べた瞬間に『あ、これやわ』ってなります。",
+    "シンプルに、めっちゃ食べたくなるやつです。",
+]
 
 
-def is_oyster_question(text: str) -> bool:
-    t = text.lower().replace("？", "").replace("?", "")
-    return ("牡蠣" in t) or ("かき" in t) or ("何個" in t) or ("なんこ" in t) or ("残り" in t)
+def ensure_keywords(text: str) -> str:
+    if "大阪福島" not in text:
+        text = f"大阪福島で、{text}"
+    if "牡蠣" not in text:
+        text += "\n牡蠣、今夜どうですか。"
+    return text.strip()
 
 
-async def safe_ai_reply(text: str, people: int, oysters: int) -> str:
-    if not AI_OK or ai is None:
-        return ""
-    try:
-        return await ai.reply_customer(text, people, oysters)
-    except Exception as e:
-        print("AI error:", e)
-        return ""
+def generate_post_variant_1() -> str:
+    text = (
+        f"{random.choice(OPENING_WORDS)}\n"
+        f"{random.choice(OYSTER_WORDS)}って、反則ですよね。\n"
+        f"{random.choice(EXTRA_PHRASES)}\n\n"
+        f"{random.choice(CTA_WORDS)}"
+    )
+    return ensure_keywords(text)
 
+
+def generate_post_variant_2() -> str:
+    text = (
+        f"大阪福島で\n"
+        f"{random.choice(SCENE_WORDS)}牡蠣。\n\n"
+        f"{random.choice(EXTRA_PHRASES)}\n"
+        f"{random.choice(QUESTION_PATTERNS)}\n\n"
+        f"今夜は牡蠣の気分じゃないですか？🦪"
+    )
+    return ensure_keywords(text)
+
+
+def generate_post_variant_3() -> str:
+    text = (
+        f"{random.choice(OPENING_WORDS)}\n"
+        f"大阪福島で牡蠣を食べるなら、\n"
+        f"{random.choice(OYSTER_WORDS)}を思い出してほしいです。\n\n"
+        f"{random.choice(EXTRA_PHRASES)}\n"
+        f"今夜の一杯と一緒にどうぞ。🦪"
+    )
+    return ensure_keywords(text)
+
+
+def generate_daily_posts() -> Dict[int, str]:
+    return {
+        1: generate_post_variant_1(),
+        2: generate_post_variant_2(),
+        3: generate_post_variant_3(),
+    }
+
+
+def save_daily_posts(post_date: str, posts: Dict[int, str]):
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    for slot, text in posts.items():
+        cur.execute("""
+            INSERT INTO daily_threads_posts (
+                post_date, slot, post_text, posted, posted_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, 0, NULL, ?, ?)
+            ON CONFLICT(post_date, slot) DO UPDATE SET
+                post_text = excluded.post_text,
+                updated_at = excluded.updated_at
+        """, (post_date, slot, text, now, now))
+    conn.commit()
+    conn.close()
+
+
+def get_daily_posts(post_date: str) -> Dict[int, Dict]:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT slot, post_text, posted, posted_at
+        FROM daily_threads_posts
+        WHERE post_date = ?
+        ORDER BY slot ASC
+    """, (post_date,))
+    rows = cur.fetchall()
+    conn.close()
+
+    out = {}
+    for row in rows:
+        out[row["slot"]] = {
+            "text": row["post_text"],
+            "posted": bool(row["posted"]),
+            "posted_at": row["posted_at"],
+        }
+    return out
+
+
+def update_post_text(post_date: str, slot: int, new_text: str) -> bool:
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    cur.execute("""
+        UPDATE daily_threads_posts
+        SET post_text = ?, updated_at = ?
+        WHERE post_date = ? AND slot = ?
+    """, (new_text, now, post_date, slot))
+    updated = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def mark_posted(post_date: str, slot: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    cur.execute("""
+        UPDATE daily_threads_posts
+        SET posted = 1, posted_at = ?, updated_at = ?
+        WHERE post_date = ? AND slot = ?
+    """, (now, now, post_date, slot))
+    conn.commit()
+    conn.close()
+
+
+def format_posts_for_line(post_date: str, posts: Dict[int, Dict]) -> str:
+    lines = [f"【{post_date} のThreads投稿案】", ""]
+    for slot in [1, 2, 3]:
+        item = posts.get(slot)
+        lines.append(f"{slot}本目（{POST_SLOTS[slot]}）")
+        if item:
+            status = "投稿済み" if item["posted"] else "未投稿"
+            lines.append(f"状態: {status}")
+            lines.append(item["text"])
+        else:
+            lines.append("未作成")
+        lines.append("")
+    lines.append("修正: #1 文章 / #2 文章 / #3 文章")
+    lines.append("確認: #投稿確認")
+    return "\n".join(lines)
+
+
+# =========================================================
+# Threads API
+# =========================================================
+
+def create_threads_post(text: str) -> str:
+    if not THREADS_ACCESS_TOKEN or not THREADS_USER_ID:
+        raise RuntimeError("THREADS_ACCESS_TOKEN or THREADS_USER_ID is missing.")
+
+    url = f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads"
+    payload = {
+        "media_type": "TEXT",
+        "text": text,
+        "access_token": THREADS_ACCESS_TOKEN,
+    }
+    r = requests.post(url, data=payload, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    creation_id = data.get("id")
+    if not creation_id:
+        raise RuntimeError(f"Threads create failed: {data}")
+    return creation_id
+
+
+def publish_threads_post(creation_id: str) -> Dict:
+    url = f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads_publish"
+    payload = {
+        "creation_id": creation_id,
+        "access_token": THREADS_ACCESS_TOKEN,
+    }
+    r = requests.post(url, data=payload, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def post_to_threads(text: str) -> Dict:
+    creation_id = create_threads_post(text)
+    result = publish_threads_post(creation_id)
+    return {"creation_id": creation_id, "publish_result": result}
+
+
+# =========================================================
+# 問い合わせ判定
+# =========================================================
+
+OYSTER_PATTERNS = [
+    r"牡蠣",
+    r"かき",
+    r"カキ",
+    r"生牡蠣",
+    r"焼き牡蠣",
+    r"蒸し牡蠣",
+]
+
+OYSTER_STOCK_PATTERNS = [
+    r"牡蠣.*(ある|あります|残|残り|在庫)",
+    r"(ある|あります|残|残り|在庫).*(牡蠣|かき|カキ)",
+    r"牡蠣(ある|あります|残り|在庫)\??",
+    r"今日.*牡蠣",
+]
+
+CROWD_PATTERNS = [
+    r"混ん",
+    r"空いて",
+    r"すいて",
+    r"込み具合",
+    r"人多い",
+    r"今何人",
+    r"席.*空",
+    r"入れそう",
+]
+
+REVIEW_PATTERNS = [
+    r"口コミ",
+    r"レビュー",
+    r"google",
+    r"グーグル",
+]
+
+
+def matches_any(text: str, patterns) -> bool:
+    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+
+def classify_message(text: str) -> Dict[str, bool]:
+    return {
+        "asks_oyster_stock": matches_any(text, OYSTER_STOCK_PATTERNS),
+        "asks_crowd": matches_any(text, CROWD_PATTERNS),
+        "asks_review": matches_any(text, REVIEW_PATTERNS),
+        "mentions_oyster": matches_any(text, OYSTER_PATTERNS),
+    }
+
+
+# =========================================================
+# 自動返信文
+# =========================================================
+
+def oyster_stock_reply() -> str:
+    count = get_oyster_count()
+    if count <= 0:
+        return (
+            f"お問い合わせありがとうございます🦪\n"
+            f"ただいまご案内できる牡蠣は確認中です。\n"
+            f"気になる場合はお電話・再メッセージください。"
+        )
+    return (
+        f"お問い合わせありがとうございます🦪\n"
+        f"本日の牡蠣は現在 **残り{count}個** です！\n"
+        f"{SHOP_AREA}で牡蠣気分の方、お待ちしてます。"
+    )
+
+
+def crowd_reply() -> str:
+    people = get_people_count()
+    if people <= 0:
+        return (
+            "お問い合わせありがとうございます😊\n"
+            "今のところ店内はかなり落ち着いてます。\n"
+            "ふらっと入りやすいタイミングです。"
+        )
+    elif people <= 3:
+        return (
+            f"お問い合わせありがとうございます😊\n"
+            f"現在の店内人数は **{people}人** です。\n"
+            "比較的ゆったりしてます。"
+        )
+    elif people <= 6:
+        return (
+            f"お問い合わせありがとうございます😊\n"
+            f"現在の店内人数は **{people}人** です。\n"
+            "少しにぎわってますが、ご案内できる可能性あります。"
+        )
+    return (
+        f"お問い合わせありがとうございます😊\n"
+        f"現在の店内人数は **{people}人** です。\n"
+        "やや混み合ってます。ご来店前に再確認がおすすめです。"
+    )
+
+
+def closed_reply() -> str:
+    return (
+        f"お問い合わせありがとうございます🦪\n"
+        f"現在は営業時間外です。\n"
+        f"営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。\n"
+        f"またのご連絡お待ちしてます！"
+    )
+
+
+def default_open_reply() -> str:
+    return (
+        f"お問い合わせありがとうございます🦪\n"
+        f"{SHOP_NAME}です！\n"
+        f"順番にご案内していますので、少々お待ちください。"
+    )
+
+
+def review_reply() -> str:
+    return (
+        "ありがとうございます！\n"
+        "Google口コミはこちらからお願いします🙏\n"
+        f"{REVIEW_URL}"
+    )
+
+
+def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[str, bool]) -> str:
+    parts = [f"【問い合わせ通知】", f"お客様: {display_name}", f"userId: {user_id}", f"内容: {text}", ""]
+    if flags.get("asks_oyster_stock"):
+        parts.append("→ 牡蠣在庫について聞かれています")
+    if flags.get("asks_crowd"):
+        parts.append("→ 混雑状況について聞かれています")
+    if flags.get("asks_review"):
+        parts.append("→ 口コミについて聞かれています")
+    return "\n".join(parts)
+
+
+# =========================================================
+# 管理者コマンド
+# =========================================================
+
+def is_owner(user_id: str) -> bool:
+    return bool(OWNER_USER_ID) and user_id == OWNER_USER_ID
+
+
+def owner_help_text() -> str:
+    return (
+        "【管理コマンド】\n"
+        "#人数 3\n"
+        "#牡蠣 120\n"
+        "#状態\n"
+        "#投稿確認\n"
+        "#今日の投稿作成\n"
+        "#1 文章\n"
+        "#2 文章\n"
+        "#3 文章\n"
+        "#今すぐ1投稿\n"
+        "#今すぐ2投稿\n"
+        "#今すぐ3投稿\n"
+        "#口コミURL"
+    )
+
+
+def handle_owner_command(text: str) -> str:
+    maybe_daily_reset()
+    t = text.strip()
+
+    m = re.match(r"^#人数\s*(\d+)$", t)
+    if m:
+        count = int(m.group(1))
+        set_people_count(count)
+        return f"現在の店内人数を {count}人 に更新しました。"
+
+    m = re.match(r"^#牡蠣\s*(\d+)$", t)
+    if m:
+        count = int(m.group(1))
+        set_oyster_count(count)
+        return f"牡蠣在庫を {count}個 に更新しました。"
+
+    if t == "#状態":
+        people = get_people_count()
+        oyster = get_oyster_count()
+        open_status = "営業中" if is_open_now() else "営業時間外"
+        return (
+            f"【現在の状態】\n"
+            f"営業: {open_status}\n"
+            f"店内人数: {people}人\n"
+            f"牡蠣在庫: {oyster}個\n"
+            f"現在時刻: {today_str()} {current_hm()}"
+        )
+
+    if t == "#口コミURL":
+        return REVIEW_URL
+
+    if t == "#今日の投稿作成":
+        posts = generate_daily_posts()
+        save_daily_posts(today_str(), posts)
+        saved = get_daily_posts(today_str())
+        return "今日のThreads投稿案を作成しました。\n\n" + format_posts_for_line(today_str(), saved)
+
+    if t == "#投稿確認":
+        posts = get_daily_posts(today_str())
+        if not posts:
+            return "今日の投稿案はまだありません。\n#今日の投稿作成 で作れます。"
+        return format_posts_for_line(today_str(), posts)
+
+    m = re.match(r"^#([123])\s+(.+)$", t, re.DOTALL)
+    if m:
+        slot = int(m.group(1))
+        new_text = ensure_keywords(m.group(2).strip())
+        if not update_post_text(today_str(), slot, new_text):
+            save_daily_posts(today_str(), generate_daily_posts())
+            update_post_text(today_str(), slot, new_text)
+        return f"{slot}本目を更新しました。\n\n{new_text}"
+
+    m = re.match(r"^#今すぐ([123])投稿$", t)
+    if m:
+        slot = int(m.group(1))
+        posts = get_daily_posts(today_str())
+        if slot not in posts:
+            return "今日の投稿案がありません。\n先に #今日の投稿作成 をしてください。"
+        result = post_to_threads(posts[slot]["text"])
+        mark_posted(today_str(), slot)
+        return f"{slot}本目をThreadsへ投稿しました。\n\n{json.dumps(result, ensure_ascii=False)}"
+
+    return owner_help_text()
+
+
+# =========================================================
+# 新規客への口コミ案内
+# =========================================================
+
+def should_send_review_url(user_id: str, text: str) -> bool:
+    user = get_user(user_id)
+    if not user:
+        return False
+    if int(user["review_sent"]) == 1:
+        return False
+
+    # 口コミを求められた時はもちろん送る
+    if matches_any(text, REVIEW_PATTERNS):
+        return True
+
+    # 初回の一般問い合わせでも送ってよければここをTrueにする
+    # 今回は控えめに「初回メッセージ時だけ軽く案内」へ
+    return True
+
+
+# =========================================================
+# Webhook
+# =========================================================
+
+@app.get("/")
+def root():
+    return {"ok": True, "service": "oyster_cloud_ultimate"}
+
+@app.get("/health")
+def health():
+    maybe_daily_reset()
+    return {
+        "ok": True,
+        "date": today_str(),
+        "time": current_hm(),
+        "people_count": get_people_count(),
+        "oyster_count": get_oyster_count(),
+    }
 
 @app.post("/callback")
 async def callback(request: Request):
-    if not (LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET and parser and config):
-        raise HTTPException(status_code=500, detail="LINE env not set")
+    if not parser:
+        raise HTTPException(status_code=500, detail="LINE parser is not configured.")
 
     signature = request.headers.get("X-Line-Signature", "")
     body = await request.body()
@@ -227,11 +796,8 @@ async def callback(request: Request):
 
     try:
         events = parser.parse(body_text, signature)
-    except Exception:
+    except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
-
-    now = datetime.now(JST)
-    reset_if_new_day(now)
 
     for event in events:
         if not isinstance(event, MessageEvent):
@@ -239,145 +805,169 @@ async def callback(request: Request):
         if not isinstance(event.message, TextMessageContent):
             continue
 
-        user_id = getattr(getattr(event, "source", None), "user_id", None)
-        text = event.message.text.strip()
+        maybe_daily_reset()
 
-        people = int(db.get("people", "0"))
-        oysters = int(db.get("oysters", "0"))
-        owner = user_id == ADMIN_USER_ID
+        text = (event.message.text or "").strip()
+        reply_token = event.reply_token
+        source = event.source
+        user_id = getattr(source, "user_id", "") or ""
+        display_name = ""
+        # LINE SDK v3でprofile取得を省略。名前は owner通知では user_id fallback
+        # 既存で user名が見えてるなら webhookのsourceから入る場合もある
+        if hasattr(source, "user_id"):
+            display_name = user_id
 
-        print("DEBUG user:", user_id)
-        print("DEBUG text:", text)
+        logger.info("message user_id=%s text=%s", user_id, text)
 
-        # 客
-        if not owner:
-            # 新規ユーザーには口コミURLを送る
-            send_review_if_first(user_id)
+        if user_id:
+            save_or_update_user(user_id, display_name)
 
-            # 牡蠣 / 人数問い合わせは店主に通知
-            if needs_notify_inventory_or_people(text):
-                name = get_display_name(user_id)
-                push_text(
-                    ADMIN_USER_ID,
-                    f"【問い合わせ】\n{name}\nuser_id: {user_id}\n内容: {text}\n現在: {people}人 / 牡蠣: {oysters}個"
-                )
-
-            # 住所
-            if is_address_question(text):
-                reply_text(event.reply_token, SHOP_ADDRESS_TEXT)
-                continue
-
-            # 営業時間
-            if is_hours_question(text):
-                if is_holiday(now):
-                    reply_text(
-                        event.reply_token,
-                        f"{SHOP_HOURS_TEXT}\n今日は定休日（火曜日）やで！"
-                    )
-                elif is_open(now):
-                    reply_text(
-                        event.reply_token,
-                        f"今は営業中やで！\n{SHOP_HOURS_TEXT}"
-                    )
-                else:
-                    reply_text(
-                        event.reply_token,
-                        f"今は閉店中やで🙏\n{SHOP_HOURS_TEXT}"
-                    )
-                continue
-
-            # 定休日
-            if is_holiday_question(text):
-                reply_text(event.reply_token, "定休日は火曜日やで！")
-                continue
-
-            # 定休日そのもの
-            if is_holiday(now):
-                reply_text(event.reply_token, SHOP_HOLIDAY_TEXT)
+        try:
+            # 管理者コマンド
+            if is_owner(user_id) and text.startswith("#"):
+                response = handle_owner_command(text)
+                reply_line(reply_token, response)
                 continue
 
             # 営業時間外
-            if not is_open(now):
-                reply_text(event.reply_token, SHOP_CLOSED_TEXT)
+            if not is_open_now():
+                reply_line(reply_token, closed_reply())
                 continue
 
-            # 状態
-            if is_status(text):
-                reply_text(event.reply_token, f"現在：{people}人 / 牡蠣：{oysters}個")
+            flags = classify_message(text)
+
+            # オーナー通知
+            if OWNER_USER_ID and (flags["asks_oyster_stock"] or flags["asks_crowd"] or flags["asks_review"]):
+                name_for_notice = display_name or "不明"
+                push_line(OWNER_USER_ID, compose_owner_alert(name_for_notice, user_id, text, flags))
+
+            # 口コミリクエスト
+            if flags["asks_review"]:
+                reply_line(reply_token, review_reply())
+                if user_id:
+                    mark_review_sent(user_id)
                 continue
 
-            # 高速返信：人数
-            if is_people_question(text):
-                reply_text(event.reply_token, f"今は店内{people}人くらいやで！")
+            # 牡蠣在庫問い合わせ
+            if flags["asks_oyster_stock"]:
+                reply_line(reply_token, oyster_stock_reply())
+                if user_id and should_send_review_url(user_id, text):
+                    try:
+                        push_line(user_id, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                        mark_review_sent(user_id)
+                    except Exception:
+                        logger.exception("failed to push review url")
                 continue
 
-            # 高速返信：牡蠣
-            if is_oyster_question(text):
-                if oysters == 0:
-                    reply_text(event.reply_token, SHOP_SOLD_OUT_TEXT)
-                else:
-                    reply_text(event.reply_token, f"牡蠣は残り{oysters}個くらいやで🦪")
+            # 混雑問い合わせ
+            if flags["asks_crowd"]:
+                reply_line(reply_token, crowd_reply())
+                if user_id and should_send_review_url(user_id, text):
+                    try:
+                        push_line(user_id, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                        mark_review_sent(user_id)
+                    except Exception:
+                        logger.exception("failed to push review url")
                 continue
 
-            # AI接客
-            ans = await safe_ai_reply(text, people, oysters)
-            if ans:
-                reply_text(event.reply_token, ans)
+            # 牡蠣に触れている一般文
+            if flags["mentions_oyster"]:
+                reply_line(reply_token, oyster_stock_reply())
+                continue
+
+            # 初回客へ軽く口コミ案内したい場合
+            user = get_user(user_id) if user_id else None
+            if user and int(user["review_sent"]) == 0:
+                reply_line(
+                    reply_token,
+                    default_open_reply() + f"\n\nGoogle口コミはこちらです🙏\n{REVIEW_URL}"
+                )
+                mark_review_sent(user_id)
             else:
-                reply_text(event.reply_token, "ちょっと今AI調子悪い🙏")
-            continue
+                reply_line(reply_token, default_open_reply())
 
-        # 店主
-        if text.lower() in ["id", "userid", "whoami"]:
-            reply_text(event.reply_token, f"user_id: {user_id}")
-            continue
-
-        if text.startswith("投稿 "):
-            msg = text.replace("投稿 ", "", 1).strip()
+        except Exception as e:
+            logger.exception("Webhook handling error")
             try:
-                threads_bot.post_to_threads(msg)
-                reply_text(event.reply_token, "Threads投稿OK")
-            except Exception as e:
-                print("Threads error:", e)
-                reply_text(event.reply_token, "Threads投稿失敗したわ🙏")
-            continue
-
-        p = parse_people(text)
-        o = parse_oysters(text)
-
-        updated = False
-
-        if p is not None:
-            db.set("people", str(p))
-            people = p
-            updated = True
-
-        if o is not None:
-            db.set("oysters", str(o))
-            oysters = o
-            updated = True
-
-        if updated:
-            reply_text(event.reply_token, f"更新OK\n人数:{people}\n牡蠣:{oysters}")
-            continue
-
-        if is_status(text):
-            reply_text(event.reply_token, f"現在：{people}人 / 牡蠣：{oysters}個")
-            continue
-
-        if is_address_question(text):
-            reply_text(event.reply_token, SHOP_ADDRESS_TEXT)
-            continue
-
-        if is_hours_question(text):
-            reply_text(event.reply_token, SHOP_HOURS_TEXT)
-            continue
-
-        if is_holiday_question(text):
-            reply_text(event.reply_token, "定休日は火曜日やで！")
-            continue
-
-        ans = await safe_ai_reply(text, people, oysters)
-        reply_text(event.reply_token, ans or "例：#3人 #牡蠣50")
+                reply_line(reply_token, f"エラーが出ました:\n{str(e)}")
+            except Exception:
+                pass
 
     return PlainTextResponse("OK")
+
+
+# =========================================================
+# Cron用
+# =========================================================
+
+def verify_cron_secret(secret: str):
+    if not CRON_SECRET or secret != CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@app.post("/cron/reset")
+def cron_reset(secret: str):
+    verify_cron_secret(secret)
+    set_people_count(0)
+    set_oyster_count(0)
+    upsert_state("last_reset_date", today_str())
+    return {"ok": True, "message": "reset completed"}
+
+
+@app.post("/cron/generate-daily-posts")
+def cron_generate_daily_posts(secret: str):
+    verify_cron_secret(secret)
+    posts = generate_daily_posts()
+    save_daily_posts(today_str(), posts)
+    saved = get_daily_posts(today_str())
+    if OWNER_USER_ID:
+        push_line(OWNER_USER_ID, format_posts_for_line(today_str(), saved))
+    return {"ok": True, "message": "daily posts generated"}
+
+
+@app.post("/cron/post/{slot}")
+def cron_post_slot(slot: int, secret: str):
+    verify_cron_secret(secret)
+
+    if slot not in [1, 2, 3]:
+        raise HTTPException(status_code=400, detail="slot must be 1,2,3")
+
+    posts = get_daily_posts(today_str())
+    if slot not in posts:
+        raise HTTPException(status_code=404, detail="No post found for today")
+
+    if posts[slot]["posted"]:
+        return {"ok": True, "message": "already posted", "slot": slot}
+
+    result = post_to_threads(posts[slot]["text"])
+    mark_posted(today_str(), slot)
+
+    if OWNER_USER_ID:
+        push_line(
+            OWNER_USER_ID,
+            f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿しました🦪\n\n{posts[slot]['text']}"
+        )
+
+    return {"ok": True, "slot": slot, "result": result}
+
+
+# =========================================================
+# 確認用API
+# =========================================================
+
+@app.get("/debug/state")
+def debug_state():
+    maybe_daily_reset()
+    return {
+        "date": today_str(),
+        "time": current_hm(),
+        "is_open": is_open_now(),
+        "people_count": get_people_count(),
+        "oyster_count": get_oyster_count(),
+        "review_url": REVIEW_URL,
+    }
+
+
+@app.get("/posts/today")
+def posts_today():
+    return {"date": today_str(), "posts": get_daily_posts(today_str())}
