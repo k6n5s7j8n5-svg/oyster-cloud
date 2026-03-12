@@ -291,44 +291,38 @@ def push_line(user_id: str, text: str):
 # =========================================================
 
 OPENING_WORDS = [
-    "今日はなんだか",
+    "今日なんか",
     "仕事終わりに",
-    "夜のごはんで",
-    "ふらっと一杯の気分なら",
-    "週末のご褒美に",
-    "海の旨味を欲してるなら",
-    "今夜の一軒目に",
     "ちょい飲みしたい夜は",
+    "なんや今日は",
+    "今夜ふらっと",
+    "牡蠣の気分の日って",
 ]
 
 OYSTER_WORDS = [
     "ぷりっとした牡蠣",
     "ミルキーな牡蠣",
-    "レモンが合う牡蠣",
-    "海の旨味が詰まった牡蠣",
+    "海の旨味ぎゅっと詰まった牡蠣",
     "焼きたての牡蠣",
-    "ひと口で幸せになる牡蠣",
-    "香りまでたまらない牡蠣",
-    "食欲を刺激する牡蠣",
+    "ひと口でうまっなる牡蠣",
+    "ええ感じの牡蠣",
 ]
 
 SCENE_WORDS = [
-    "ハイボールと合わせたくなる",
-    "ビールがすすむ",
-    "ついもう1個いきたくなる",
+    "ハイボールと合わせたなる",
+    "ビールすすむ",
+    "ついもう1個いきたなる",
     "一口目からテンション上がる",
-    "今夜食べたくなる",
-    "ふらっと寄って食べたくなる",
-    "誰かとシェアしたくなる",
-    "1人でも楽しみたくなる",
+    "今夜食べたなる",
+    "ふらっと寄ってつまみたなる",
 ]
 
 CTA_WORDS = [
-    "大阪福島で牡蠣食べるなら、今夜どうですか。🦪",
-    "大阪福島で牡蠣の気分なら、ふらっとどうぞ。🦪",
-    "大阪福島で牡蠣を欲してる人、待ってます。🦪",
-    "大阪福島で牡蠣を楽しみたい夜に。🦪",
-    "大阪福島で牡蠣食べたい人に届けたい。🦪",
+    "大阪福島で牡蠣食べるなら、今夜どうです？🦪",
+    "大阪福島で牡蠣の気分やったら、ふらっとどうぞ🦪",
+    "大阪福島で牡蠣つまみながら一杯どうですか？🦪",
+    "大阪福島で牡蠣いっときたい人、待ってます🦪",
+    "大阪福島でゆるっと牡蠣どうです？🦪",
 ]
 
 QUESTION_PATTERNS = [
@@ -339,12 +333,12 @@ QUESTION_PATTERNS = [
 ]
 
 EXTRA_PHRASES = [
-    "口いっぱいに海の旨味が広がります。",
     "香りだけで一杯いけそうです。",
-    "ひと口食べたら気分が変わります。",
-    "今夜の正解ってこれかもしれません。",
-    "食べた瞬間に『あ、これやわ』ってなります。",
+    "ひと口食べたら『あ、これやわ』ってなります。",
+    "今夜の正解、これかもしれません。",
     "シンプルに、めっちゃ食べたくなるやつです。",
+    "ちょいつまむつもりが止まらんやつです。",
+    "海のミルク、ええ感じに入ってます。",
 ]
 
 
@@ -352,14 +346,14 @@ def ensure_keywords(text: str) -> str:
     if "大阪福島" not in text:
         text = f"大阪福島で、{text}"
     if "牡蠣" not in text:
-        text += "\n牡蠣、今夜どうですか。"
+        text += "\n牡蠣、今夜どうです？🦪"
     return text.strip()
 
 
 def generate_post_variant_1() -> str:
     text = (
-        f"{random.choice(OPENING_WORDS)}\n"
-        f"{random.choice(OYSTER_WORDS)}って、反則ですよね。\n"
+        f"{random.choice(OPENING_WORDS)}牡蠣いっときたない？🦪\n"
+        f"{random.choice(OYSTER_WORDS)}って、ほんま反則ですよね。\n"
         f"{random.choice(EXTRA_PHRASES)}\n\n"
         f"{random.choice(CTA_WORDS)}"
     )
@@ -372,7 +366,7 @@ def generate_post_variant_2() -> str:
         f"{random.choice(SCENE_WORDS)}牡蠣。\n\n"
         f"{random.choice(EXTRA_PHRASES)}\n"
         f"{random.choice(QUESTION_PATTERNS)}\n\n"
-        f"今夜は牡蠣の気分じゃないですか？🦪"
+        f"今夜、牡蠣の口なってません？🦪"
     )
     return ensure_keywords(text)
 
@@ -380,10 +374,10 @@ def generate_post_variant_2() -> str:
 def generate_post_variant_3() -> str:
     text = (
         f"{random.choice(OPENING_WORDS)}\n"
-        f"大阪福島で牡蠣を食べるなら、\n"
-        f"{random.choice(OYSTER_WORDS)}を思い出してほしいです。\n\n"
+        f"大阪福島でちょっと牡蠣つまみたい夜に。🦪\n\n"
+        f"{random.choice(OYSTER_WORDS)}、"
         f"{random.choice(EXTRA_PHRASES)}\n"
-        f"今夜の一杯と一緒にどうぞ。🦪"
+        f"今夜の一杯と一緒にどうぞ。"
     )
     return ensure_keywords(text)
 
