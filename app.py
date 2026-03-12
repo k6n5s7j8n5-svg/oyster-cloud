@@ -492,3 +492,22 @@ async def callback(request: Request):
                 )
 
     return PlainTextResponse("OK")
+@app.get("/cron/generate-daily-posts")
+def cron_generate_daily_posts():
+    return {"status": "generate posts ok"}
+
+@app.get("/cron/post/1")
+def cron_post1():
+    return {"status": "post1 ok"}
+
+@app.get("/cron/post/2")
+def cron_post2():
+    return {"status": "post2 ok"}
+
+@app.get("/cron/post/3")
+def cron_post3():
+    return {"status": "post3 ok"}
+
+@app.get("/zzz-test")
+def zzz_test():
+    return {"status": "zzz ok"}
