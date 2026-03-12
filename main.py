@@ -949,34 +949,6 @@ def cron_post_slot(slot: int, secret: str):
 # 確認用API
 # =========================================================
 
-@app.get("/debug/state")
-def debug_state():
-    maybe_daily_reset()
-    return {
-        "date": today_str(),
-        "time": current_hm(),
-        "is_open": is_open_now(),
-        "people_count": get_people_count(),
-        "oyster_count": get_oyster_count(),
-        "review_url": REVIEW_URL,
-    }
-
-
 @app.get("/posts/today")
 def posts_today():
     return {"date": today_str(), "posts": get_daily_posts(today_str())}
-    @app.get("/cron/generate-daily-posts")
-def cron_generate_daily_posts():
-    return {"status": "generate posts ok"}
-
-@app.get("/cron/post/1")
-def cron_post1():
-    return {"status": "post1 ok"}
-
-@app.get("/cron/post/2")
-def cron_post2():
-    return {"status": "post2 ok"}
-
-@app.get("/cron/post/3")
-def cron_post3():
-    return {"status": "post3 ok"}
