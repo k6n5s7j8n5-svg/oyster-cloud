@@ -218,33 +218,37 @@ def default_reply() -> str:
 # =========================
 
 OPENING_WORDS = [
-    "今日はなんだか",
+    "今日なんか",
     "仕事終わりに",
-    "夜のごはんで",
-    "ふらっと一杯の気分なら",
-    "週末のご褒美に",
-    "今夜の一軒目に",
+    "ちょい飲みしたい夜は",
+    "なんや今日は",
+    "今夜ふらっと",
+    "牡蠣の口なってる日って",
 ]
 
 OYSTER_WORDS = [
     "ぷりっとした牡蠣",
     "ミルキーな牡蠣",
-    "レモンが合う牡蠣",
-    "海の旨味が詰まった牡蠣",
+    "海の旨味ぎゅっと詰まった牡蠣",
     "焼きたての牡蠣",
+    "ひと口でうまっなる牡蠣",
+    "ええ感じの牡蠣",
 ]
 
 EXTRA_PHRASES = [
-    "口いっぱいに海の旨味が広がります。",
     "香りだけで一杯いけそうです。",
-    "ひと口食べたら気分が変わります。",
-    "今夜の正解ってこれかもしれません。",
+    "ひと口食べたら『あ、これやわ』ってなります。",
+    "今夜の正解、これかもしれません。",
+    "シンプルに、めっちゃ食べたくなるやつです。",
+    "ちょいつまむつもりが止まらんやつです。",
+    "海のミルク、ええ感じに入ってます。",
 ]
 
 QUESTION_PATTERNS = [
     "生牡蠣派？焼き牡蠣派？",
     "レモン派？そのまま派？",
     "1個で止まる派？止まらん派？",
+    "ハイボール派？ビール派？",
 ]
 
 
@@ -252,16 +256,16 @@ def ensure_keywords(text: str) -> str:
     if "大阪福島" not in text:
         text = f"大阪福島で\n{text}"
     if "牡蠣" not in text:
-        text += "\n牡蠣、今夜どうですか。"
+        text += "\n牡蠣、今夜どうです？🦪"
     return text.strip()
 
 
 def generate_post1() -> str:
     text = (
-        f"{random.choice(OPENING_WORDS)}\n"
-        f"{random.choice(OYSTER_WORDS)}って、反則ですよね。🦪\n"
+        f"{random.choice(OPENING_WORDS)}牡蠣いっときたない？🦪\n"
+        f"{random.choice(OYSTER_WORDS)}って、ほんま反則ですよね。\n"
         f"{random.choice(EXTRA_PHRASES)}\n\n"
-        f"大阪福島で牡蠣食べるなら、今夜どうですか。"
+        f"大阪福島で牡蠣つまみながら一杯どうですか？"
     )
     return ensure_keywords(text)
 
@@ -279,7 +283,7 @@ def generate_post2() -> str:
 def generate_post3() -> str:
     text = (
         "大阪福島で\n"
-        "ちょっと牡蠣食べたい夜に。🦪\n\n"
+        "ちょっと牡蠣つまみたい夜に。🦪\n\n"
         f"{random.choice(OYSTER_WORDS)}。\n"
         "今夜の一杯と一緒にどうぞ。"
     )
@@ -309,62 +313,6 @@ def get_posts_text() -> str:
         f"#1 文章\n#2 文章\n#3 文章\n"
         f"で送ってください。"
     )
-
-
-# =========================
-# cron
-# =========================
-
-@app.get("/cron/generate-daily-posts")
-def cron_generate_daily_posts():
-    daily_reset_if_needed()
-    save_daily_posts()
-    if OWNER_USER_ID:
-        push_text(OWNER_USER_ID, get_posts_text())
-    return {"status": "generate posts ok"}
-
-
-@app.get("/cron/post/1")
-def cron_post1():
-    daily_reset_if_needed()
-    text = db.get("post1", "")
-    if not text:
-        save_daily_posts()
-        text = db.get("post1", "")
-    threads_bot.post_to_threads(text)
-    db.set("post1_done", "1")
-    return {"status": "post1 ok"}
-
-
-@app.get("/cron/post/2")
-def cron_post2():
-    daily_reset_if_needed()
-    text = db.get("post2", "")
-    if not text:
-        save_daily_posts()
-        text = db.get("post2", "")
-    threads_bot.post_to_threads(text)
-    db.set("post2_done", "1")
-    return {"status": "post2 ok"}
-
-
-@app.get("/cron/post/3")
-def cron_post3():
-    daily_reset_if_needed()
-    text = db.get("post3", "")
-    if not text:
-        save_daily_posts()
-        text = db.get("post3", "")
-    threads_bot.post_to_threads(text)
-    db.set("post3_done", "1")
-    return {"status": "post3 ok"}
-
-
-@app.get("/zzz-test")
-def zzz_test():
-    return {"status": "zzz ok"}
-
-
 # =========================
 # LINE webhook
 # =========================
