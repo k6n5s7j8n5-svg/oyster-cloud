@@ -3,3 +3,4 @@ uvicorn[standard]
 line-bot-sdk
 playwright
 httpx
+requests
