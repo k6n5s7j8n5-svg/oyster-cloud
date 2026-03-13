@@ -748,7 +748,6 @@ def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[
 from openai import OpenAI
 client = OpenAI()
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def ai_kansai_reply(user_text: str) -> str:
     try:
