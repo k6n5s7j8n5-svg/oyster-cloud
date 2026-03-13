@@ -1,5 +1,4 @@
 import os
-import re
 import base64
 from playwright.sync_api import sync_playwright
 
@@ -17,21 +16,24 @@ def post_to_threads(text: str):
     restore_storage()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--single-process",
+                "--no-zygote",
+            ],
+        )
         context = browser.new_context(storage_state=STATE_FILE)
         page = context.new_page()
 
-        page.goto("https://www.threads.net/", wait_until="domcontentloaded")
-        page.wait_for_timeout(2000)
+        page.goto("https://www.threads.net/", wait_until="networkidle")
+        page.wait_for_timeout(3000)
 
-        # ※ここはThreads側のUI変更で変わる。前に動いてたセレクタの版に合わせる
-        # ひとまず「投稿」ボタン検索のアプローチ（has-text）は残す
-        page.get_by_role("button", name="新規スレッド").click(timeout=15000)
-        editor = page.locator("div[contenteditable='true']").first
-        editor.click()
-        editor.fill(text)
+        page.goto("https://www.threads.net/intent/post?text=" + text, wait_until="networkidle")
+        page.wait_for_timeout(5000)
 
-        page.get_by_role("button", name=re.compile("投稿|Post")).click(timeout=15000)
-
-        context.close()
         browser.close()
