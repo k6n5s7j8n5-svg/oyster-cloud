@@ -617,47 +617,42 @@ def review_reply() -> str:
 
 
 def ai_kansai_reply(user_text: str, display_name: str = "") -> str:
-
     if not client:
         return "おおきに！ちょい今確認してるから少し待ってな🦪"
 
     people = get_people_count()
     oysters = get_oyster_count()
 
-    prompt = f"""
-あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。
-
-必ず自然な関西弁で短く返してください。
-
-店情報
-店名:{SHOP_NAME}
-場所:{SHOP_AREA}
-店内人数:{people}
-牡蠣残数:{oysters}
-
-お客様:{display_name}
-メッセージ:{user_text}
-
-ルール
-・人数を聞かれたら店内人数を答える
-・牡蠣を聞かれたら牡蠣残数を答える
-・人数と牡蠣両方聞かれたら両方答える
-・雑談は自然に返す
-・標準語は禁止
-"""
-
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"あなたは{SHOP_AREA}の牡蠣屋『{SHOP_NAME}』の店員です。"
+                        "必ず自然な関西弁で、親しみやすく、短めに返してください。"
+                        "雑談にも自然に返しつつ、店に関係ある話なら軽く来店につながる返しをしてください。"
+                        "標準語は使わず、『〜やで』『〜やねん』『〜してな』など自然な関西弁で返してください。"
+                        "店内人数や牡蠣残数は、与えられた数字をそのまま使ってください。"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"表示名: {display_name}\n"
+                        f"店内人数: {people}\n"
+                        f"牡蠣残数: {oysters}\n"
+                        f"メッセージ: {user_text}"
+                    )
+                }
+            ],
             max_tokens=150,
         )
-
         return response.choices[0].message.content.strip()
-
     except Exception as e:
         logger.exception("ai_kansai_reply error: %s", e)
-        return "おおきに！ちょい今バタついてるわ🙏"
+        return "おおきに！ちょい今バタついてて、うまく返されへんかったわ🙏 もう一回送ってな。"
 
 # =========================================================
 # 管理者コマンド
@@ -825,9 +820,28 @@ async def callback(request: Request):
                 reply_line(reply_token, response)
                 continue
 
-            if not is_open_now():
-                reply_line(reply_token, closed_reply())
-                continue
+        if not is_open_now():
+            flags = classify_message(text)
+ 
+            ai_text = ai_kansai_reply(
+                f"""
+        今は営業時間外です。
+        営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。
+
+        お客様メッセージ:
+        {text}
+
+        ルール:
+        ・営業時間外であることは伝える
+        ・でも会話は冷たく切らず、自然な関西弁で返す
+        ・雑談なら雑談として返す
+        ・人数や牡蠣について聞かれたら、営業時間外やけど分かる範囲で自然に返す
+        """.strip(),
+                display_name
+            )
+
+            reply_line(reply_token, ai_text)
+            continue
 
             flags = classify_message(text)
 
