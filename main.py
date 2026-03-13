@@ -919,7 +919,7 @@ def cron_generate_daily_posts(secret: str):
     return {"ok": True, "message": "daily posts generated"}
 
 
-@app.api_route("/cron/post/{slot}"),methods=["GET","POST"])
+@app.api_route("/cron/post/{slot}",methods=["GET","POST"])
 def cron_post_slot(slot: int, secret: str):
     verify_cron_secret(secret)
 
