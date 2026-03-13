@@ -672,54 +672,48 @@ def review_reply() -> str:
     )
 
 
-def ai_kansai_reply(user_text: str) -> str:
+def ai_kansai_reply(user_text: str, display_name: str = "") -> str:
+
     if not client:
         return "おおきに！ちょい今確認してるから少し待ってな🦪"
+
+    people = get_people_count()
+    oysters = get_oyster_count()
+
+    prompt = f"""
+あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。
+
+必ず自然な関西弁で短く返してください。
+
+店情報
+店名:{SHOP_NAME}
+場所:{SHOP_AREA}
+店内人数:{people}
+牡蠣残数:{oysters}
+
+お客様:{display_name}
+メッセージ:{user_text}
+
+ルール
+・人数を聞かれたら店内人数を答える
+・牡蠣を聞かれたら牡蠣残数を答える
+・人数と牡蠣両方聞かれたら両方答える
+・雑談は自然に返す
+・標準語は禁止
+"""
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"あなたは{SHOP_AREA}の牡蠣屋『{SHOP_NAME}』の店員です。"
-                        "必ず自然な関西弁で、親しみやすく、短めに返してください。"
-                        "雑談にも自然に返しつつ、店に関係ある話なら軽く来店につながる返しをしてください。"
-                        "標準語は使わず、『〜やで』『〜やねん』『〜してな』など自然な関西弁で返してください。"
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": user_text
-                }
-            ],
-            max_tokens=120,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
         )
+
         return response.choices[0].message.content.strip()
+
     except Exception as e:
         logger.exception("ai_kansai_reply error: %s", e)
-        return "おおきに！ちょい今バタついてて、うまく返されへんかったわ🙏 もう一回送ってな。"
-
-
-def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[str, bool]) -> str:
-    parts = [
-        "【問い合わせ通知】",
-        f"お客様: {display_name}",
-        f"userId: {user_id}",
-        f"内容: {text}",
-        ""
-    ]
-    if flags.get("asks_oyster_stock") or flags.get("mentions_oyster"):
-        parts.append("→ 牡蠣在庫について聞かれてます")
-    if flags.get("asks_crowd"):
-        parts.append("→ 混雑状況・人数について聞かれてます")
-    if flags.get("asks_review"):
-        parts.append("→ 口コミについて聞かれてます")
-    if flags.get("asks_people_and_oysters"):
-        parts.append("→ 人数と牡蠣の両方について聞かれてます")
-    return "\n".join(parts)
-
+        return "おおきに！ちょい今バタついてるわ🙏"
 
 # =========================================================
 # 管理者コマンド
