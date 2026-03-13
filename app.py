@@ -455,11 +455,19 @@ def cron_generate_daily_posts():
 @app.get("/cron/post/1")
 def cron_post1():
     daily_reset_if_needed()
+    print("CRON_POST1: started")
     text = db.get("post1", "")
+    print("CRON_POST1: text =", text)
+
     if not text:
+        print("CRON_POST1: no text, generating posts")
         save_daily_posts()
         text = db.get("post1", "")
+
+    print("CRON_POST1: before threads post")
     threads_bot.post_to_threads(text)
+    print("CRON_POST1: after threads post")
+
     db.set("post1_done", "1")
     return {"status": "post1 ok"}
 
