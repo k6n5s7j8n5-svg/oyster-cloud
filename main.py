@@ -908,7 +908,7 @@ def cron_reset(secret: str):
     return {"ok": True, "message": "reset completed"}
 
 
-@app.post("/cron/generate-daily-posts")
+@app.api_route("/cron/generate-daily-posts", methods=["GET", "POST"])
 def cron_generate_daily_posts(secret: str):
     verify_cron_secret(secret)
     posts = generate_daily_posts()
