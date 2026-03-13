@@ -1,6 +1,8 @@
 import os
 import re
+import json
 import random
+import requests
 from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Request, HTTPException
@@ -28,6 +30,7 @@ REVIEW_URL = os.getenv("REVIEW_URL", "https://g.page/r/CXCoWU0ghRcQEBM/review")
 SHOP_NAME = os.getenv("SHOP_NAME", "キヨリト大阪福島店")
 SHOP_AREA = os.getenv("SHOP_AREA", "大阪福島")
 OPEN_HOUR = int(os.getenv("OPEN_HOUR", "16"))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 JST = timezone(timedelta(hours=9))
 
@@ -213,46 +216,111 @@ def default_reply() -> str:
     return f"お問い合わせありがとうございます🦪\n{SHOP_NAME}です。順番にご案内します。"
 
 
+def status_reply() -> str:
+    return f"現在は{get_people()}人 / 牡蠣は{get_oysters()}個です。"
+
+
+def fallback_ai_reply(kind: str) -> str:
+    if kind == "oyster":
+        return oyster_reply()
+    if kind == "crowd":
+        return crowd_reply()
+    if kind == "closed":
+        return closed_reply()
+    if kind == "status":
+        return status_reply()
+    if kind == "review":
+        return f"Google口コミはこちらです🙏\n{REVIEW_URL}"
+    return default_reply()
+
+
+def ai_shop_reply(kind: str, user_text: str = "") -> str:
+    if not OPENAI_API_KEY:
+        return fallback_ai_reply(kind)
+
+    people = get_people()
+    oysters = get_oysters()
+    open_now = is_open_now()
+
+    facts = {
+        "shop_name": SHOP_NAME,
+        "shop_area": SHOP_AREA,
+        "open_hour": OPEN_HOUR,
+        "is_open_now": open_now,
+        "people_count": people,
+        "oyster_count": oysters,
+        "review_url": REVIEW_URL,
+        "kind": kind,
+        "user_text": user_text,
+    }
+
+    system_prompt = f"""
+あなたは{SHOP_AREA}にある小さな立ち飲み牡蠣屋「{SHOP_NAME}」の店主です。
+お客さんへのLINE返信を作ってください。
+
+ルール:
+- 軽い関西弁
+- 店っぽく自然に
+- 短めで読みやすく
+- 数字や営業時間は与えられた事実をそのまま使う
+- 嘘を書かない
+- 長すぎる宣伝はしない
+- 必要なら🦪や😊を少しだけ使う
+- 返答文だけ返す
+- Markdownの ** は使わない
+""".strip()
+
+    user_prompt = f"""
+以下の事実を使って、お客さんへの返信を1本作ってください。
+
+事実:
+{json.dumps(facts, ensure_ascii=False)}
+
+kind の意味:
+- oyster: 牡蠣の在庫についての問い合わせ
+- crowd: 混雑・人数についての問い合わせ
+- closed: 営業時間外の問い合わせ
+- status: 店の現在状態の確認
+- review: 口コミURLの案内
+- default: 通常の案内
+""".strip()
+
+    payload = {
+        "model": "gpt-4.1-mini",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.8,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        r = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        r.raise_for_status()
+        data = r.json()
+        content = data["choices"][0]["message"]["content"].strip()
+        return content if content else fallback_ai_reply(kind)
+    except Exception as e:
+        print("ai_shop_reply error:", e)
+        return fallback_ai_reply(kind)
+
+
 # =========================
 # Threads投稿文生成
 # =========================
 
-OPENING_WORDS = [
-    "今日なんか",
-    "仕事終わりに",
-    "ちょい飲みしたい夜は",
-    "なんや今日は",
-    "今夜ふらっと",
-    "牡蠣の口なってる日って",
-]
-
-OYSTER_WORDS = [
-    "ぷりっとした牡蠣",
-    "ミルキーな牡蠣",
-    "海の旨味ぎゅっと詰まった牡蠣",
-    "焼きたての牡蠣",
-    "ひと口でうまっなる牡蠣",
-    "ええ感じの牡蠣",
-]
-
-EXTRA_PHRASES = [
-    "香りだけで一杯いけそうです。",
-    "ひと口食べたら『あ、これやわ』ってなります。",
-    "今夜の正解、これかもしれません。",
-    "シンプルに、めっちゃ食べたくなるやつです。",
-    "ちょいつまむつもりが止まらんやつです。",
-    "海のミルク、ええ感じに入ってます。",
-]
-
-QUESTION_PATTERNS = [
-    "生牡蠣派？焼き牡蠣派？",
-    "レモン派？そのまま派？",
-    "1個で止まる派？止まらん派？",
-    "ハイボール派？ビール派？",
-]
-
-
 def ensure_keywords(text: str) -> str:
+    text = text.strip()
     if "大阪福島" not in text:
         text = f"大阪福島で\n{text}"
     if "牡蠣" not in text:
@@ -260,40 +328,96 @@ def ensure_keywords(text: str) -> str:
     return text.strip()
 
 
-def generate_post1() -> str:
-    text = (
-        f"{random.choice(OPENING_WORDS)}牡蠣いっときたない？🦪\n"
-        f"{random.choice(OYSTER_WORDS)}って、ほんま反則ですよね。\n"
-        f"{random.choice(EXTRA_PHRASES)}\n\n"
-        f"大阪福島で牡蠣つまみながら一杯どうですか？"
+def call_openai_for_posts() -> dict:
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY が未設定です")
+
+    system_prompt = f"""
+あなたは{SHOP_AREA}にある小さな立ち飲み牡蠣屋「{SHOP_NAME}」のSNS担当です。
+Threads投稿を3本作ってください。
+
+ルール:
+- 軽い関西弁
+- めちゃくちゃ店っぽい口調
+- 宣伝くさすぎない
+- 牡蠣が食べたくなる
+- 短めで読みやすい
+- 「大阪福島」を自然に入れる
+- 絵文字は🦪をたまに使う
+- 1本ごとに少しトーンを変える
+- 昼(12:00)、夕方(18:00)、夜(22:30)向けに作る
+- ハッシュタグは不要
+- JSONだけ返す
+- キーは post1, post2, post3
+
+出力形式:
+{{
+  "post1": "本文",
+  "post2": "本文",
+  "post3": "本文"
+}}
+""".strip()
+
+    user_prompt = """
+今日のThreads投稿を3本ください。
+店の雰囲気は「小さな立ち飲み・ふらっと寄れる・牡蠣と一杯がうまい」です。
+""".strip()
+
+    payload = {
+        "model": "gpt-4.1-mini",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.9,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    r = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=60,
     )
-    return ensure_keywords(text)
+    r.raise_for_status()
+    data = r.json()
+
+    content = data["choices"][0]["message"]["content"].strip()
+
+    if content.startswith("```"):
+        content = content.replace("```json", "").replace("```", "").strip()
+
+    posts = json.loads(content)
+
+    return {
+        "post1": ensure_keywords(posts["post1"]),
+        "post2": ensure_keywords(posts["post2"]),
+        "post3": ensure_keywords(posts["post3"]),
+    }
 
 
-def generate_post2() -> str:
-    text = (
-        "大阪福島で\n"
-        "仕事終わりに食べたくなる牡蠣。🦪\n\n"
-        f"{random.choice(EXTRA_PHRASES)}\n"
-        f"{random.choice(QUESTION_PATTERNS)}"
-    )
-    return ensure_keywords(text)
-
-
-def generate_post3() -> str:
-    text = (
-        "大阪福島で\n"
-        "ちょっと牡蠣つまみたい夜に。🦪\n\n"
-        f"{random.choice(OYSTER_WORDS)}。\n"
-        "今夜の一杯と一緒にどうぞ。"
-    )
-    return ensure_keywords(text)
+def fallback_posts() -> dict:
+    return {
+        "post1": ensure_keywords("今日なんか牡蠣いっときたない？🦪\n海の旨味ぎゅっと詰まったやつ、ええ感じで入ってます。"),
+        "post2": ensure_keywords("仕事終わりに牡蠣つまんで一杯どうです？🦪\n大阪福島でゆるっと待ってます。"),
+        "post3": ensure_keywords("ちょっと牡蠣の口なってる夜ちゃいます？🦪\n今夜の一杯と一緒にどうぞ。"),
+    }
 
 
 def save_daily_posts():
-    db.set("post1", generate_post1())
-    db.set("post2", generate_post2())
-    db.set("post3", generate_post3())
+    try:
+        posts = call_openai_for_posts()
+    except Exception as e:
+        print("AI投稿生成失敗:", e)
+        posts = fallback_posts()
+
+    db.set("post1", posts["post1"])
+    db.set("post2", posts["post2"])
+    db.set("post3", posts["post3"])
     db.set("post1_done", "0")
     db.set("post2_done", "0")
     db.set("post3_done", "0")
@@ -313,6 +437,8 @@ def get_posts_text() -> str:
         f"#1 文章\n#2 文章\n#3 文章\n"
         f"で送ってください。"
     )
+
+
 # =========================
 # LINE webhook
 # =========================
@@ -421,22 +547,18 @@ async def callback(request: Request):
                 cur_oysters = o
 
             if asks_status(text):
-                reply_text(event.reply_token, f"現在：{cur_people}人 / 牡蠣：{cur_oysters}個")
+                reply_text(event.reply_token, ai_shop_reply("status", text))
             elif (p is not None) or (o is not None):
                 reply_text(event.reply_token, f"更新OK：{cur_people}人 / 牡蠣：{cur_oysters}個")
             elif not is_open_now():
-                reply_text(event.reply_token, closed_reply())
+                reply_text(event.reply_token, ai_shop_reply("closed", text))
             elif asks_review(text):
-                reply_text(event.reply_token, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                reply_text(event.reply_token, ai_shop_reply("review", text))
             elif asks_oysters(text):
-                reply_text(event.reply_token, oyster_reply())
+                reply_text(event.reply_token, ai_shop_reply("oyster", text))
             elif asks_crowd(text):
-                reply_text(event.reply_token, crowd_reply())
+                reply_text(event.reply_token, ai_shop_reply("crowd", text))
             else:
-                reply_text(
-                    event.reply_token,
-                    "例：『今3人』『牡蠣20個』『状態』\n"
-                    "投稿作成は『#今日の投稿作成』です。"
-                )
+                reply_text(event.reply_token, ai_shop_reply("default", text))
 
     return PlainTextResponse("OK")
