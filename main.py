@@ -745,6 +745,31 @@ def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[
         parts.append("→ 人数と牡蠣の両方について聞かれています")
     return "\n".join(parts)
 
+import openai
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def ai_kansai_reply(user_text: str) -> str:
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "あなたは大阪福島の立ち飲み牡蠣屋の店員です。関西弁でフレンドリーに答えてください。"
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
+            max_tokens=120
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception:
+        return "おおきに！ちょっと今確認してるから少し待ってな🦪"
 
 # =========================================================
 # AI関西弁返信
