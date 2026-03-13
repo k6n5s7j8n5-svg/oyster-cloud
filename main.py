@@ -11,6 +11,8 @@ import requests
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 
+from openai import OpenAI
+
 from linebot.v3.webhook import WebhookParser
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -70,6 +72,9 @@ if LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET:
     api_client = ApiClient(configuration)
     messaging_api = MessagingApi(api_client)
     parser = WebhookParser(LINE_CHANNEL_SECRET)
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+client: Optional[OpenAI] = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 
 # =========================================================
@@ -284,13 +289,13 @@ def push_line(user_id: str, text: str):
 
 def get_line_display_name(user_id: str) -> str:
     if not messaging_api or not user_id:
-        return user_id or "不明"
+        return "不明"
     try:
         profile = messaging_api.get_profile(user_id)
-        return getattr(profile, "display_name", "") or user_id
+        return getattr(profile, "display_name", "") or "不明"
     except Exception:
         logger.exception("failed to get LINE profile")
-        return user_id or "不明"
+        return "不明"
 
 
 # =========================================================
@@ -665,66 +670,36 @@ def review_reply() -> str:
         "Google口コミはここからお願いしてるで🙏\n"
         f"{REVIEW_URL}"
     )
-    
+
+
 def ai_kansai_reply(user_text: str) -> str:
-    return f"おおきに！『{user_text}』のことやな。ちょい確認するから少し待ってな🦪"
+    if not client:
+        return "おおきに！ちょい今確認してるから少し待ってな🦪"
 
-def crowd_reply() -> str:
-    people = get_people_count()
-    if people <= 0:
-        return (
-            "お問い合わせありがとうございます😊\n"
-            "今のところ店内はかなり落ち着いてます。\n"
-            "ふらっと入りやすいタイミングです。"
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"あなたは{SHOP_AREA}の牡蠣屋『{SHOP_NAME}』の店員です。"
+                        "必ず自然な関西弁で、親しみやすく、短めに返してください。"
+                        "雑談にも自然に返しつつ、店に関係ある話なら軽く来店につながる返しをしてください。"
+                        "標準語は使わず、『〜やで』『〜やねん』『〜してな』など自然な関西弁で返してください。"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
+            max_tokens=120,
         )
-    if people <= 3:
-        return (
-            f"お問い合わせありがとうございます😊\n"
-            f"現在の店内人数は {people}人 です。\n"
-            "比較的ゆったりしてます。"
-        )
-    if people <= 6:
-        return (
-            f"お問い合わせありがとうございます😊\n"
-            f"現在の店内人数は {people}人 です。\n"
-            "少しにぎわってますが、ご案内できる可能性あります。"
-        )
-    return (
-        f"お問い合わせありがとうございます😊\n"
-        f"現在の店内人数は {people}人 です。\n"
-        "やや混み合ってます。ご来店前に再確認がおすすめです。"
-    )
-
-
-def people_and_oysters_reply() -> str:
-    people = get_people_count()
-    oysters = get_oyster_count()
-    return f"現在の店内人数は {people} 人です🍻\n牡蠣の残りは {oysters} 個です🦪"
-
-
-def closed_reply() -> str:
-    return (
-        "お問い合わせありがとうございます🦪\n"
-        "現在は営業時間外です。\n"
-        f"営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。\n"
-        "またのご連絡お待ちしてます！"
-    )
-
-
-def default_open_reply() -> str:
-    return (
-        f"お問い合わせありがとうございます🦪\n"
-        f"{SHOP_NAME}です！\n"
-        "順番にご案内していますので、少々お待ちください。"
-    )
-
-
-def review_reply() -> str:
-    return (
-        "ありがとうございます！\n"
-        "Google口コミはこちらからお願いします🙏\n"
-        f"{REVIEW_URL}"
-    )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.exception("ai_kansai_reply error: %s", e)
+        return "おおきに！ちょい今バタついてて、うまく返されへんかったわ🙏 もう一回送ってな。"
 
 
 def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[str, bool]) -> str:
@@ -736,63 +711,14 @@ def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[
         ""
     ]
     if flags.get("asks_oyster_stock") or flags.get("mentions_oyster"):
-        parts.append("→ 牡蠣在庫について聞かれています")
+        parts.append("→ 牡蠣在庫について聞かれてます")
     if flags.get("asks_crowd"):
-        parts.append("→ 混雑状況・人数について聞かれています")
+        parts.append("→ 混雑状況・人数について聞かれてます")
     if flags.get("asks_review"):
-        parts.append("→ 口コミについて聞かれています")
+        parts.append("→ 口コミについて聞かれてます")
     if flags.get("asks_people_and_oysters"):
-        parts.append("→ 人数と牡蠣の両方について聞かれています")
+        parts.append("→ 人数と牡蠣の両方について聞かれてます")
     return "\n".join(parts)
-
-from openai import OpenAI
-client = OpenAI()
-
-
-def ai_kansai_reply(user_text: str) -> str:
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "あなたは大阪福島の立ち飲み牡蠣屋の店員です。関西弁でフレンドリーに答えてください。"
-                },
-                {
-                    "role": "user",
-                    "content": user_text
-                }
-            ],
-            max_tokens=120
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception:
-        return "おおきに！ちょっと今確認してるから少し待ってな🦪"
-
-# =========================================================
-# AI関西弁返信
-# =========================================================
-
-def ai_kansai_reply(user_text: str) -> str:
-
-    prompt = f"""
-あなたは大阪福島の牡蠣屋「キヨリト大阪福島店」の店員です。
-必ず自然な関西弁で返信してください。
-
-ルール
-・親しみやすい
-・居酒屋店員っぽい
-・短め
-・関西弁（やで / やねん / 待ってるで）
-
-お客さんのメッセージ
-{user_text}
-"""
-
-    # 今は簡易返信
-    return "おおきに！ちょい確認するから少し待ってな🦪"
 
 
 # =========================================================
@@ -829,13 +755,13 @@ def handle_owner_command(text: str) -> str:
     if m:
         count = int(m.group(1))
         set_people_count(count)
-        return f"現在の店内人数を {count}人 に更新しました。"
+        return f"今の店内人数を {count}人 に更新したで。"
 
     m = re.fullmatch(r"#\s*牡蠣\s*(\d+)", t)
     if m:
         count = int(m.group(1))
         set_oyster_count(count)
-        return f"牡蠣在庫を {count}個 に更新しました。"
+        return f"牡蠣在庫を {count}個 に更新したで。"
 
     if t == "#状態":
         people = get_people_count()
@@ -856,12 +782,12 @@ def handle_owner_command(text: str) -> str:
         posts = generate_daily_posts()
         save_daily_posts(today_str(), posts)
         saved = get_daily_posts(today_str())
-        return "今日のThreads投稿案を作成しました。\n\n" + format_posts_for_line(today_str(), saved)
+        return "今日のThreads投稿案を作成したで。\n\n" + format_posts_for_line(today_str(), saved)
 
     if t == "#投稿確認":
         posts = get_daily_posts(today_str())
         if not posts:
-            return "今日の投稿案はまだありません。\n#今日の投稿作成 で作れます。"
+            return "今日の投稿案はまだないで。\n#今日の投稿作成 で作れるで。"
         return format_posts_for_line(today_str(), posts)
 
     m = re.match(r"^#([123])\s+(.+)$", t, re.DOTALL)
@@ -871,17 +797,17 @@ def handle_owner_command(text: str) -> str:
         if not update_post_text(today_str(), slot, new_text):
             save_daily_posts(today_str(), generate_daily_posts())
             update_post_text(today_str(), slot, new_text)
-        return f"{slot}本目を更新しました。\n\n{new_text}"
+        return f"{slot}本目を更新したで。\n\n{new_text}"
 
     m = re.match(r"^#今すぐ([123])投稿$", t)
     if m:
         slot = int(m.group(1))
         posts = get_daily_posts(today_str())
         if slot not in posts:
-            return "今日の投稿案がありません。\n先に #今日の投稿作成 をしてください。"
+            return "今日の投稿案がまだないで。\n先に #今日の投稿作成 をしてな。"
         result = post_to_threads(posts[slot]["text"])
         mark_posted(today_str(), slot)
-        return f"{slot}本目をThreadsへ投稿しました。\n\n{json.dumps(result, ensure_ascii=False)}"
+        return f"{slot}本目をThreadsへ投稿したで。\n\n{json.dumps(result, ensure_ascii=False)}"
 
     return owner_help_text()
 
@@ -985,7 +911,7 @@ async def callback(request: Request):
                 reply_line(reply_token, people_and_oysters_reply())
                 if user_id and should_send_review_url(user_id, text):
                     try:
-                        push_line(user_id, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
                         mark_review_sent(user_id)
                     except Exception:
                         logger.exception("failed to push review url")
@@ -995,7 +921,7 @@ async def callback(request: Request):
                 reply_line(reply_token, oyster_stock_reply())
                 if user_id and should_send_review_url(user_id, text):
                     try:
-                        push_line(user_id, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
                         mark_review_sent(user_id)
                     except Exception:
                         logger.exception("failed to push review url")
@@ -1008,7 +934,7 @@ async def callback(request: Request):
                     reply_line(reply_token, crowd_reply())
                 if user_id and should_send_review_url(user_id, text):
                     try:
-                        push_line(user_id, f"Google口コミはこちらです🙏\n{REVIEW_URL}")
+                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
                         mark_review_sent(user_id)
                     except Exception:
                         logger.exception("failed to push review url")
@@ -1022,7 +948,7 @@ async def callback(request: Request):
             if user and int(user["review_sent"]) == 0:
                 reply_line(
                     reply_token,
-                    ai_kansai_reply(text) + f"\n\nGoogle口コミはこちらです🙏\n{REVIEW_URL}"
+                    ai_kansai_reply(text) + f"\n\nGoogle口コミはこちらやで🙏\n{REVIEW_URL}"
                 )
                 mark_review_sent(user_id)
             else:
@@ -1031,7 +957,7 @@ async def callback(request: Request):
         except Exception as e:
             logger.exception("Webhook handling error")
             try:
-                reply_line(reply_token, f"エラーが出ました:\n{str(e)}")
+                reply_line(reply_token, f"エラーが出たわ:\n{str(e)}")
             except Exception:
                 pass
 
@@ -1087,7 +1013,7 @@ def cron_post_slot(slot: int, secret: str):
     if OWNER_USER_ID:
         push_line(
             OWNER_USER_ID,
-            f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿しました🦪\n\n{posts[slot]['text']}"
+            f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿したで🦪\n\n{posts[slot]['text']}"
         )
 
     return {"ok": True, "slot": slot, "result": result}
