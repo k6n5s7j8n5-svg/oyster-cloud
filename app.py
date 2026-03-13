@@ -440,6 +440,60 @@ def get_posts_text() -> str:
 
 
 # =========================
+# cron
+# =========================
+
+@app.get("/cron/generate-daily-posts")
+def cron_generate_daily_posts():
+    daily_reset_if_needed()
+    save_daily_posts()
+    if OWNER_USER_ID:
+        push_text(OWNER_USER_ID, get_posts_text())
+    return {"status": "generate posts ok"}
+
+
+@app.get("/cron/post/1")
+def cron_post1():
+    daily_reset_if_needed()
+    text = db.get("post1", "")
+    if not text:
+        save_daily_posts()
+        text = db.get("post1", "")
+    threads_bot.post_to_threads(text)
+    db.set("post1_done", "1")
+    return {"status": "post1 ok"}
+
+
+@app.get("/cron/post/2")
+def cron_post2():
+    daily_reset_if_needed()
+    text = db.get("post2", "")
+    if not text:
+        save_daily_posts()
+        text = db.get("post2", "")
+    threads_bot.post_to_threads(text)
+    db.set("post2_done", "1")
+    return {"status": "post2 ok"}
+
+
+@app.get("/cron/post/3")
+def cron_post3():
+    daily_reset_if_needed()
+    text = db.get("post3", "")
+    if not text:
+        save_daily_posts()
+        text = db.get("post3", "")
+    threads_bot.post_to_threads(text)
+    db.set("post3_done", "1")
+    return {"status": "post3 ok"}
+
+
+@app.get("/zzz-test")
+def zzz_test():
+    return {"status": "zzz ok"}
+
+
+# =========================
 # LINE webhook
 # =========================
 
