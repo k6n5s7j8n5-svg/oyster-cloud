@@ -593,21 +593,81 @@ def oyster_stock_reply() -> str:
     count = get_oyster_count()
     if count <= 0:
         return (
-            "お問い合わせありがとうございます🦪\n"
-            "ただいまご案内できる牡蠣は確認中です。\n"
-            "気になる場合はお電話・再メッセージください。"
+            "問い合わせありがとうな🦪\n"
+            "いま案内できる牡蠣は確認中やねん。\n"
+            "気になるときは、もう一回メッセージしてな。"
         )
     return (
-        f"お問い合わせありがとうございます🦪\n"
-        f"本日の牡蠣は現在 残り{count}個 です！\n"
-        f"{SHOP_AREA}で牡蠣気分の方、お待ちしてます。"
+        f"問い合わせありがとうな🦪\n"
+        f"今日の牡蠣は今、残り{count}個やで！\n"
+        f"{SHOP_AREA}で牡蠣食べたなったら待ってるで。"
     )
 
 
 def people_reply() -> str:
     people = get_people_count()
-    return f"現在の店内人数は {people} 人です🍻"
+    return f"今の店内人数は {people} 人やで🍻"
 
+
+def crowd_reply() -> str:
+    people = get_people_count()
+    if people <= 0:
+        return (
+            "問い合わせありがとう😊\n"
+            "今んとこ店内はかなり落ち着いてるで。\n"
+            "ふらっと入りやすいタイミングやわ。"
+        )
+    if people <= 3:
+        return (
+            f"問い合わせありがとう😊\n"
+            f"今の店内人数は {people}人 やで。\n"
+            "比較的ゆったりしてるわ。"
+        )
+    if people <= 6:
+        return (
+            f"問い合わせありがとう😊\n"
+            f"今の店内人数は {people}人 やで。\n"
+            "ちょいにぎわってるけど、案内できる可能性あるで。"
+        )
+    return (
+        f"問い合わせありがとう😊\n"
+        f"今の店内人数は {people}人 やで。\n"
+        "ちょい混み気味やから、来る前にもう一回確認してもろたら安心やで。"
+    )
+
+
+def people_and_oysters_reply() -> str:
+    people = get_people_count()
+    oysters = get_oyster_count()
+    return f"今の店内人数は {people} 人やで🍻\n牡蠣の残りは {oysters} 個やで🦪"
+
+
+def closed_reply() -> str:
+    return (
+        "問い合わせありがとうな🦪\n"
+        "今は営業時間外やねん。\n"
+        f"営業時間は毎日 {OPEN_HOUR}:00〜23:59 やで。\n"
+        "また営業中に連絡待ってるわ！"
+    )
+
+
+def default_open_reply() -> str:
+    return (
+        f"問い合わせありがとうな🦪\n"
+        f"{SHOP_NAME}やで！\n"
+        "順番に案内してるから、ちょい待ってな。"
+    )
+
+
+def review_reply() -> str:
+    return (
+        "ありがとう！\n"
+        "Google口コミはここからお願いしてるで🙏\n"
+        f"{REVIEW_URL}"
+    )
+    
+def ai_kansai_reply(user_text: str) -> str:
+    return f"おおきに！『{user_text}』のことやな。ちょい確認するから少し待ってな🦪"
 
 def crowd_reply() -> str:
     people = get_people_count()
@@ -937,11 +997,11 @@ async def callback(request: Request):
             if user and int(user["review_sent"]) == 0:
                 reply_line(
                     reply_token,
-                    default_open_reply() + f"\n\nGoogle口コミはこちらです🙏\n{REVIEW_URL}"
+                    ai_kansai_reply(text) + f"\n\nGoogle口コミはこちらです🙏\n{REVIEW_URL}"
                 )
                 mark_review_sent(user_id)
             else:
-                reply_line(reply_token, default_open_reply())
+                reply_line(reply_token, ai_kansai_reply(text))
 
         except Exception as e:
             logger.exception("Webhook handling error")
