@@ -1,4 +1,5 @@
 import os
+import re
 import base64
 from playwright.sync_api import sync_playwright
 
