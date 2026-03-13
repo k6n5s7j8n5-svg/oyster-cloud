@@ -745,7 +745,8 @@ def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[
         parts.append("→ 人数と牡蠣の両方について聞かれています")
     return "\n".join(parts)
 
-import openai
+from openai import OpenAI
+client = OpenAI()
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
