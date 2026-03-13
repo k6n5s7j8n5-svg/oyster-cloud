@@ -5,3 +5,4 @@ playwright
 httpx
 requests
 gunicorn
+openai
