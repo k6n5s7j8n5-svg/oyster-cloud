@@ -302,37 +302,48 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成
 # =========================================================
 
-def generate_ai_threads_post():
-
+def generate_ai_threads_post() -> str:
     if not client:
         return "大阪福島で牡蠣どうです？🦪"
+
+    people = get_people_count()
+    oysters = get_oyster_count()
 
     prompt = f"""
 あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。
 
-Threads用の投稿を作ってください。
+Threads投稿を作ってください。
 
 条件
-・関西弁
-・短い
-・牡蠣食べたくなる
-・大阪福島
+・自然な関西弁
+・短め
+・牡蠣が食べたくなる内容
+・大阪福島を入れる
+・店内人数: {people}
+・牡蠣残数: {oysters}
 ・絵文字OK
+・日本語で出力
 """
 
     try:
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role":"user","content":prompt}],
-            max_tokens=120
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=120,
         )
-
         return response.choices[0].message.content.strip()
 
-    except:
-
+    except Exception as e:
+        logger.exception("generate_ai_threads_post error: %s", e)
         return "大阪福島で牡蠣どうです？🦪"
+
+
+def generate_daily_posts() -> Dict[int, str]:
+    return {
+        1: generate_ai_threads_post(),
+        2: generate_ai_threads_post(),
+        3: generate_ai_threads_post(),
+    }
 
 
 def save_daily_posts(post_date: str, posts: Dict[int, str]):
