@@ -302,104 +302,37 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成
 # =========================================================
 
-OPENING_WORDS = [
-    "今日なんか",
-    "仕事終わりに",
-    "ちょい飲みしたい夜は",
-    "なんや今日は",
-    "今夜ふらっと",
-    "牡蠣の気分の日って",
-]
+def generate_ai_threads_post():
 
-OYSTER_WORDS = [
-    "ぷりっとした牡蠣",
-    "ミルキーな牡蠣",
-    "海の旨味ぎゅっと詰まった牡蠣",
-    "焼きたての牡蠣",
-    "ひと口でうまっなる牡蠣",
-    "ええ感じの牡蠣",
-]
+    if not client:
+        return "大阪福島で牡蠣どうです？🦪"
 
-SCENE_WORDS = [
-    "ハイボールと合わせたなる",
-    "ビールすすむ",
-    "ついもう1個いきたなる",
-    "一口目からテンション上がる",
-    "今夜食べたなる",
-    "ふらっと寄ってつまみたなる",
-]
+    prompt = f"""
+あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。
 
-CTA_WORDS = [
-    "大阪福島で牡蠣食べるなら、今夜どうです？🦪",
-    "大阪福島で牡蠣の気分やったら、ふらっとどうぞ🦪",
-    "大阪福島で牡蠣つまみながら一杯どうですか？🦪",
-    "大阪福島で牡蠣いっときたい人、待ってます🦪",
-    "大阪福島でゆるっと牡蠣どうです？🦪",
-]
+Threads用の投稿を作ってください。
 
-QUESTION_PATTERNS = [
-    "生牡蠣派？焼き牡蠣派？",
-    "レモン派？そのまま派？",
-    "1個で止まる派？止まらん派？",
-    "ハイボール派？ビール派？",
-]
+条件
+・関西弁
+・短い
+・牡蠣食べたくなる
+・大阪福島
+・絵文字OK
+"""
 
-EXTRA_PHRASES = [
-    "香りだけで一杯いけそうです。",
-    "ひと口食べたら『あ、これやわ』ってなります。",
-    "今夜の正解、これかもしれません。",
-    "シンプルに、めっちゃ食べたくなるやつです。",
-    "ちょいつまむつもりが止まらんやつです。",
-    "海のミルク、ええ感じに入ってます。",
-]
+    try:
 
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role":"user","content":prompt}],
+            max_tokens=120
+        )
 
-def ensure_keywords(text: str) -> str:
-    if "大阪福島" not in text:
-        text = f"大阪福島で、{text}"
-    if "牡蠣" not in text:
-        text += "\n牡蠣、今夜どうです？🦪"
-    return text.strip()
+        return response.choices[0].message.content.strip()
 
+    except:
 
-def generate_post_variant_1() -> str:
-    text = (
-        f"{random.choice(OPENING_WORDS)}牡蠣いっときたない？🦪\n"
-        f"{random.choice(OYSTER_WORDS)}って、ほんま反則ですよね。\n"
-        f"{random.choice(EXTRA_PHRASES)}\n\n"
-        f"{random.choice(CTA_WORDS)}"
-    )
-    return ensure_keywords(text)
-
-
-def generate_post_variant_2() -> str:
-    text = (
-        f"大阪福島で\n"
-        f"{random.choice(SCENE_WORDS)}牡蠣。\n\n"
-        f"{random.choice(EXTRA_PHRASES)}\n"
-        f"{random.choice(QUESTION_PATTERNS)}\n\n"
-        f"今夜、牡蠣の口なってません？🦪"
-    )
-    return ensure_keywords(text)
-
-
-def generate_post_variant_3() -> str:
-    text = (
-        f"{random.choice(OPENING_WORDS)}\n"
-        f"大阪福島でちょっと牡蠣つまみたい夜に。🦪\n\n"
-        f"{random.choice(OYSTER_WORDS)}、"
-        f"{random.choice(EXTRA_PHRASES)}\n"
-        f"今夜の一杯と一緒にどうぞ。"
-    )
-    return ensure_keywords(text)
-
-
-def generate_daily_posts() -> Dict[int, str]:
-    return {
-        1: generate_post_variant_1(),
-        2: generate_post_variant_2(),
-        3: generate_post_variant_3(),
-    }
+        return "大阪福島で牡蠣どうです？🦪"
 
 
 def save_daily_posts(post_date: str, posts: Dict[int, str]):
