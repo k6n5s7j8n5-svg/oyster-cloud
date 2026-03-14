@@ -302,28 +302,41 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成
 # =========================================================
 
+from datetime import datetime
+import pytz
+
 def generate_ai_threads_post() -> str:
+
     if not client:
         return "大阪福島で牡蠣どうです？🦪"
 
     people = get_people_count()
     oysters = get_oyster_count()
 
-    prompt = f"""
-あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。
+    now = datetime.now(pytz.timezone("Asia/Tokyo")).hour
 
-Threads投稿を作ってください。
+    if now < 16:
+        time_text = "まだ営業前なので『16時から開けるで』『夕方から待ってるで』などの表現にする"
+    elif now < 21:
+        time_text = "今営業してる雰囲気にする"
+    else:
+        time_text = "まだ飲めるで、もう一杯どう？など夜遅めの雰囲気にする"
 
-条件
-・自然な関西弁
-・短め
-・牡蠣が食べたくなる内容
-・大阪福島を入れる
-・店内人数: {people}
-・牡蠣残数: {oysters}
-・絵文字OK
-・日本語で出力
-"""
+    prompt = (
+        f"あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。\n"
+        "Threads投稿を1本作ってください。\n\n"
+        "条件:\n"
+        "・自然な関西弁\n"
+        "・短め\n"
+        "・牡蠣が食べたくなる内容\n"
+        "・大阪福島を入れる\n"
+        f"・{time_text}\n"
+        f"・店内人数: {people}\n"
+        f"・牡蠣残数: {oysters}\n"
+        "・絵文字OK\n"
+        "・日本語\n"
+        "・最後にハッシュタグ1〜2個\n"
+    )
 
     try:
         response = client.chat.completions.create(
@@ -331,6 +344,7 @@ Threads投稿を作ってください。
             messages=[{"role": "user", "content": prompt}],
             max_tokens=120,
         )
+
         return response.choices[0].message.content.strip()
 
     except Exception as e:
