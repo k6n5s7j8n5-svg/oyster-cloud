@@ -303,21 +303,16 @@ def get_line_display_name(user_id: str) -> str:
 # =========================================================
 
 def generate_ai_threads_post(slot: int) -> str:
-    """
-    slot:
-      1 = 12:00投稿（営業前）
-      2 = 18:00投稿（営業中）
-      3 = 22:30投稿（夜遅め）
-    """
 
-    fallback_map = {
-        1: "今日もええ牡蠣入ってるで🦪\n16時から開けるから、仕事終わりに大阪福島で待ってるで。\n#大阪福島 #牡蠣",
+    posts = {
+        1: "今日もええ牡蠣入ってるで🦪\n16時から開けるから、仕事終わりに大阪福島で寄ってな。\n#大阪福島 #牡蠣",
+
         2: "大阪福島で牡蠣どうや？🦪\n今開いてるで。ふらっと一杯寄ってな。\n#大阪福島 #牡蠣",
+
         3: "まだいけるで🦪\n牡蠣つまみにもう一杯どう？大阪福島で待ってるわ。\n#大阪福島 #牡蠣",
     }
 
-    if not client:
-        return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
+    return posts.get(slot, "大阪福島で牡蠣どうです？🦪")
 
     people = get_people_count()
     oysters = get_oyster_count()
