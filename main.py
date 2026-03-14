@@ -299,64 +299,93 @@ def get_line_display_name(user_id: str) -> str:
 
 
 # =========================================================
-# Threads投稿文生成
+# Threads投稿文生成（完成版）
 # =========================================================
 
-from datetime import datetime
-import pytz
+def generate_ai_threads_post(slot: int) -> str:
+    """
+    slot:
+      1 = 12:00投稿（営業前）
+      2 = 18:00投稿（営業中）
+      3 = 22:30投稿（夜遅め）
+    """
 
-def generate_ai_threads_post() -> str:
+    fallback_map = {
+        1: "今日もええ牡蠣入ってるで🦪\n16時から開けるから、仕事終わりに大阪福島で待ってるで。\n#大阪福島 #牡蠣",
+        2: "大阪福島で牡蠣どうや？🦪\n今開いてるで。ふらっと一杯寄ってな。\n#大阪福島 #牡蠣",
+        3: "まだいけるで🦪\n牡蠣つまみにもう一杯どう？大阪福島で待ってるわ。\n#大阪福島 #牡蠣",
+    }
 
     if not client:
-        return "大阪福島で牡蠣どうです？🦪"
+        return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
 
     people = get_people_count()
     oysters = get_oyster_count()
 
-    now = datetime.now(pytz.timezone("Asia/Tokyo")).hour
-
-    if now < 16:
-        time_text = "まだ営業前なので『16時から開けるで』『夕方から待ってるで』などの表現にする"
-    elif now < 21:
-        time_text = "今営業してる雰囲気にする"
+    if slot == 1:
+        slot_rule = (
+            "12時投稿です。まだ営業前です。"
+            "『16時から開けるで』『夕方から待ってるで』『仕事終わりに寄ってな』"
+            "みたいな営業前の表現にしてください。"
+            "今すぐ営業してるような書き方はしないでください。"
+        )
+    elif slot == 2:
+        slot_rule = (
+            "18時投稿です。営業中の雰囲気にしてください。"
+            "『今開いてるで』『ふらっと寄ってな』『今ええ感じやで』"
+            "みたいな表現にしてください。"
+        )
     else:
-        time_text = "まだ飲めるで、もう一杯どう？など夜遅めの雰囲気にする"
+        slot_rule = (
+            "22:30投稿です。夜遅めの雰囲気にしてください。"
+            "『まだいけるで』『もう一杯どう？』『夜の締めにどう？』"
+            "みたいな表現にしてください。"
+        )
 
     prompt = (
-        f"あなたは大阪福島の牡蠣屋『{SHOP_NAME}』の店員です。\n"
+        f"あなたは{SHOP_AREA}の牡蠣屋『{SHOP_NAME}』の店員です。\n"
         "Threads投稿を1本作ってください。\n\n"
         "条件:\n"
         "・自然な関西弁\n"
         "・短め\n"
         "・牡蠣が食べたくなる内容\n"
-        "・大阪福島を入れる\n"
-        f"・{time_text}\n"
-        f"・店内人数: {people}\n"
-        f"・牡蠣残数: {oysters}\n"
+        f"・{SHOP_AREA} を入れる\n"
+        f"・店内人数は {people}人\n"
+        f"・牡蠣残数は {oysters}個\n"
         "・絵文字OK\n"
-        "・日本語\n"
-        "・最後にハッシュタグ1〜2個\n"
+        "・日本語で出力\n"
+        "・ハッシュタグは最後に1〜2個まで\n"
+        "・過度に長くしない\n"
+        "・文字化けしそうな特殊文字は使わない\n"
+        f"・{slot_rule}\n"
     )
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=120,
+            max_tokens=140,
         )
+        text = response.choices[0].message.content.strip()
 
-        return response.choices[0].message.content.strip()
+        # 念のため軽く整形
+        text = text.replace("\x00", "").replace("\r", "").strip()
+
+        if not text:
+            return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
+
+        return text
 
     except Exception as e:
         logger.exception("generate_ai_threads_post error: %s", e)
-        return "大阪福島で牡蠣どうです？🦪"
+        return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
 
 
 def generate_daily_posts() -> Dict[int, str]:
     return {
-        1: generate_ai_threads_post(),
-        2: generate_ai_threads_post(),
-        3: generate_ai_threads_post(),
+        1: generate_ai_threads_post(1),
+        2: generate_ai_threads_post(2),
+        3: generate_ai_threads_post(3),
     }
 
 
