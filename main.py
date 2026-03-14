@@ -978,3 +978,10 @@ def cron_post_slot(slot: int, secret: str):
 @app.get("/posts/today")
 def posts_today():
     return {"date": today_str(), "posts": get_daily_posts(today_str())}
+
+@app.get("/encoding-test")
+def encoding_test():
+    return {
+        "ascii": "test noon post",
+        "jp": "大阪福島で牡蠣どう？🦪"
+    }
