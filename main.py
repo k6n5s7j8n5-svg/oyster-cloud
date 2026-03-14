@@ -726,7 +726,7 @@ def handle_owner_command(text: str) -> str:
     m = re.match(r"^#([123])\s+(.+)$", t, re.DOTALL)
     if m:
         slot = int(m.group(1))
-        new_text = ensure_keywords(m.group(2).strip())
+        new_text = m.group(2).strip()
         if not update_post_text(today_str(), slot, new_text):
             save_daily_posts(today_str(), generate_daily_posts())
             update_post_text(today_str(), slot, new_text)
