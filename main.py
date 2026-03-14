@@ -303,16 +303,12 @@ def get_line_display_name(user_id: str) -> str:
 # =========================================================
 
 def generate_ai_threads_post(slot: int) -> str:
-
     posts = {
-        1: "今日もええ牡蠣入ってるで🦪\n16時から開けるから、仕事終わりに大阪福島で寄ってな。\n#大阪福島 #牡蠣",
-
-        2: "大阪福島で牡蠣どうや？🦪\n今開いてるで。ふらっと一杯寄ってな。\n#大阪福島 #牡蠣",
-
-        3: "まだいけるで🦪\n牡蠣つまみにもう一杯どう？大阪福島で待ってるわ。\n#大阪福島 #牡蠣",
+        1: "16\u6642\u304b\u3089\u7261\u8823\u958b\u3051\u308b\u3067\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u5f85\u3063\u3066\u308b\u3067\uff01",
+        2: "\u591c\u3048\u3048\u611f\u3058\u306b\u8cd1\u308f\u3063\u3066\u304d\u305f\u3067\U0001f37a \u7261\u8823\u307e\u3060\u3042\u308b\u3067\uff01",
+        3: "\u591c\u306e\u7de0\u3081\u306b\u7261\u8823\u3069\u3046\uff1f\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u4e00\u676f\u3044\u3053\u3084",
     }
-
-    return posts.get(slot, "大阪福島で牡蠣どうです？🦪")
+    return posts.get(slot, "\u7261\u8823\u98df\u3079\u306b\u304d\u3066\u3084\U0001f9aa")
 
     people = get_people_count()
     oysters = get_oyster_count()
