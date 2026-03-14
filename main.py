@@ -820,28 +820,25 @@ async def callback(request: Request):
                 reply_line(reply_token, response)
                 continue
 
-        if not is_open_now():
-            flags = classify_message(text)
- 
-            ai_text = ai_kansai_reply(
-                f"""
-        今は営業時間外です。
-        営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。
+            if not is_open_now():
+                ai_text = ai_kansai_reply(
+                    f"""
+今は営業時間外です。
+営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。
 
-        お客様メッセージ:
-        {text}
+お客様メッセージ:
+{text}
 
-        ルール:
-        ・営業時間外であることは伝える
-        ・でも会話は冷たく切らず、自然な関西弁で返す
-        ・雑談なら雑談として返す
-        ・人数や牡蠣について聞かれたら、営業時間外やけど分かる範囲で自然に返す
-        """.strip(),
-                display_name
-            )
-
-            reply_line(reply_token, ai_text)
-            continue
+ルール:
+・営業時間外であることは伝える
+・でも会話は冷たく切らず、自然な関西弁で返す
+・雑談なら雑談として返す
+・人数や牡蠣について聞かれたら、営業時間外やけど分かる範囲で自然に返す
+""".strip(),
+                    display_name
+                )
+                reply_line(reply_token, ai_text)
+                continue
 
             flags = classify_message(text)
 
@@ -859,52 +856,17 @@ async def callback(request: Request):
                     mark_review_sent(user_id)
                 continue
 
-            if flags["asks_people_and_oysters"]:
-                reply_line(reply_token, people_and_oysters_reply())
-                if user_id and should_send_review_url(user_id, text):
-                    try:
-                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
-                        mark_review_sent(user_id)
-                    except Exception:
-                        logger.exception("failed to push review url")
-                continue
-
-            if flags["asks_oyster_stock"]:
-                reply_line(reply_token, oyster_stock_reply())
-                if user_id and should_send_review_url(user_id, text):
-                    try:
-                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
-                        mark_review_sent(user_id)
-                    except Exception:
-                        logger.exception("failed to push review url")
-                continue
-
-            if flags["asks_crowd"]:
-                if re.search(r"(人数|何人|店内人数|店内)", text):
-                    reply_line(reply_token, people_reply())
-                else:
-                    reply_line(reply_token, crowd_reply())
-                if user_id and should_send_review_url(user_id, text):
-                    try:
-                        push_line(user_id, f"Google口コミはこちらやで🙏\n{REVIEW_URL}")
-                        mark_review_sent(user_id)
-                    except Exception:
-                        logger.exception("failed to push review url")
-                continue
-
-            if flags["mentions_oyster"]:
-                reply_line(reply_token, oyster_stock_reply())
-                continue
+            ai_text = ai_kansai_reply(text, display_name)
 
             user = get_user(user_id) if user_id else None
             if user and int(user["review_sent"]) == 0:
                 reply_line(
                     reply_token,
-                    ai_kansai_reply(text) + f"\n\nGoogle口コミはこちらやで🙏\n{REVIEW_URL}"
+                    ai_text + f"\n\nGoogle口コミはこちらやで🙏\n{REVIEW_URL}"
                 )
                 mark_review_sent(user_id)
             else:
-                reply_line(reply_token, ai_kansai_reply(text))
+                reply_line(reply_token, ai_text)
 
         except Exception as e:
             logger.exception("Webhook handling error")
