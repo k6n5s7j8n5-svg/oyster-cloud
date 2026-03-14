@@ -1,3 +1,4 @@
+from fastapi.responses import JSONResponse
 import os
 import re
 import json
@@ -977,7 +978,9 @@ def posts_today():
 
 @app.get("/encoding-test")
 def encoding_test():
-    return {
-        "ascii": "test noon post",
-        "jp": "大阪福島で牡蠣どう？🦪"
-    }
+    return JSONResponse(
+        content={
+            "ascii": "test noon post",
+            "jp": "大阪福島で牡蠣どう？🦪"
+        },
+        media_type="application/json; charset=utf-8"
