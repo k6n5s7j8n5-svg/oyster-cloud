@@ -1,4 +1,5 @@
 from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse, Response
 import os
 import re
 import json
@@ -974,15 +975,25 @@ def cron_post_slot(slot: int, secret: str):
 
 @app.get("/posts/today")
 def posts_today():
-    return {"date": today_str(), "posts": get_daily_posts(today_str())}
+    body = json.dumps(
+        {"date": today_str(), "posts": get_daily_posts(today_str())},
+        ensure_ascii=False
+    )
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="application/json; charset=utf-8"
 
 @app.get("/encoding-test")
 def encoding_test():
-    return JSONResponse(
-        content={
+    body = json.dumps(
+        {
             "ascii": "test noon post",
             "jp": "大阪福島で牡蠣どう？🦪"
         },
+        ensure_ascii=False
+    )
+    return Response(
+        content=body.encode("utf-8"),
         media_type="application/json; charset=utf-8"
     )
     
