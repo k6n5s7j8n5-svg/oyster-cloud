@@ -868,7 +868,7 @@ async def callback(request: Request):
         reply_token = event.reply_token
         source = event.source
         user_id = getattr(source, "user_id", "") or ""
-        display_name = get_line_display_name(user_id) if user_id else "不明"
+        display_name = "不明"
 
         logger.info("message user_id=%s text=%s", user_id, text)
 
