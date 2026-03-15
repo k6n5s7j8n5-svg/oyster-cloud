@@ -984,3 +984,5 @@ def encoding_test():
             "jp": "大阪福島で牡蠣どう？🦪"
         },
         media_type="application/json; charset=utf-8"
+    )
+    
