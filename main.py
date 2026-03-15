@@ -573,6 +573,28 @@ def classify_message(text: str) -> Dict[str, bool]:
     }
 
 
+def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[str, bool]) -> str:
+    parts = [
+        "【問い合わせ通知】",
+        f"お客様: {display_name}",
+        f"userId: {user_id}",
+        f"内容: {text}",
+        ""
+    ]
+
+    if flags.get("asks_oyster_stock") or flags.get("mentions_oyster"):
+        parts.append("→ 牡蠣在庫について聞かれてます")
+
+    if flags.get("asks_crowd"):
+        parts.append("→ 混雑状況・人数について聞かれてます")
+
+    if flags.get("asks_review"):
+        parts.append("→ 口コミについて聞かれてます")
+
+    if flags.get("asks_people_and_oysters"):
+        parts.append("→ 人数と牡蠣の両方について聞かれてます")
+
+    return "\n".join(parts)
 # =========================================================
 # 自動返信文
 # =========================================================
