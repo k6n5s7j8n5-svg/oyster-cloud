@@ -1,11 +1,14 @@
-from fastapi.responses import JSONResponse
-from fastapi.responses import PlainTextResponse, Response
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
+
 import os
 import re
 import json
 import random
 import sqlite3
 import logging
+import requests
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
