@@ -985,7 +985,7 @@ def posts_today():
     return Response(
         content=body.encode("utf-8"),
         media_type="application/json; charset=utf-8"
-
+    )
 @app.get("/encoding-test")
 def encoding_test():
     body = json.dumps(
