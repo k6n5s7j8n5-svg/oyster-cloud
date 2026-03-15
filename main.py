@@ -305,9 +305,9 @@ def get_line_display_name(user_id: str) -> str:
 
 def generate_ai_threads_post(slot: int) -> str:
     posts = {
-        1: "open at 16:00 oyster post",
-        2: "evening oyster post",
-        3: "night oyster post",
+        1: "16:00\u304b\u3089\u958b\u3051\u308b\u3067\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u5f85\u3063\u3066\u308b\u3067\uff01",
+        2: "\u4eca\u958b\u3044\u3066\u308b\u3067\U0001f9aa \u3075\u3089\u3063\u3068\u4e00\u676f\u5bc4\u3063\u3066\u306a\uff01",
+        3: "\u591c\u306e\u7de0\u3081\u306b\u7261\u8823\u3069\u3046\uff1f\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u4e00\u676f\u3044\u3053\u3084",
     }
     return posts.get(slot, "oyster post")
 
