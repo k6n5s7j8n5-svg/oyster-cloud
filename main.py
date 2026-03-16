@@ -689,7 +689,12 @@ def classify_message(text: str) -> Dict[str, bool]:
 
 def oyster_stock_reply() -> str:
     count = get_oyster_count()
-    if count <= 0:def compose_owner_alert(
+    if count <= 0:
+        return "今牡蠣売り切れやわ～！"
+
+    return f"　今の牡蠣在庫は｛count}個やで！
+ 
+def compose_owner_alert(
     inquiry_id: int,
     display_name: str,
     user_id: str,
