@@ -119,17 +119,23 @@ def init_db():
     cur = conn.cursor()
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS app_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """)
+        
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS line_users (
             user_id TEXT PRIMARY KEY,
+          cur.execute("""
+        CREATE TABLE IF NOT EXISTS inquiries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
             display_name TEXT,
+            message_text TEXT NOT NULL,
+            category TEXT,
+            replied INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            replied_at TEXT
+        )
+    """)  display_name TEXT,
             first_seen_at TEXT NOT NULL,
             last_seen_at TEXT NOT NULL,
             review_sent INTEGER NOT NULL DEFAULT 0
@@ -261,6 +267,104 @@ def mark_review_sent(user_id: str):
     """, (user_id,))
     conn.commit()
     conn.close()
+
+def get_cached_display_name(user_id: str) -> str:
+    user = get_user(user_id)
+    if not user:
+        return "不明"
+    return user["display_name"] or "不明"
+
+
+def save_inquiry(user_id: str, display_name: str, message_text: str, category: str = "") -> int:
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+
+    cur.execute("""
+        INSERT INTO inquiries (user_id, display_name, message_text, category, replied, created_at)
+        VALUES (?, ?, ?, ?, 0, ?)
+    """, (user_id, display_name, message_text, category, now))
+
+    inquiry_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return inquiry_id
+
+
+def get_pending_inquiries(limit: int = 20):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT *
+        FROM inquiries
+        WHERE replied = 0
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def get_inquiry_by_id(inquiry_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT *
+        FROM inquiries
+        WHERE id = ?
+    """, (inquiry_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+
+def mark_inquiry_replied(inquiry_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    now = now_jst().isoformat()
+    cur.execute("""
+        UPDATE inquiries
+        SET replied = 1,
+            replied_at = ?
+        WHERE id = ?
+    """, (now, inquiry_id))
+    conn.commit()
+    conn.close()
+
+
+def format_pending_inquiries(limit: int = 10) -> str:
+    rows = get_pending_inquiries(limit=limit)
+    if not rows:
+        return "未返信の問い合わせは今ないで。"
+
+    lines = ["【未返信問い合わせ一覧】", ""]
+    for row in rows:
+        name = row["display_name"] or "不明"
+        category = row["category"] or "未分類"
+        text = row["message_text"] or ""
+        if len(text) > 30:
+            text = text[:30] + "..."
+        lines.append(f"ID:{row['id']} / {name} / {category}")
+        lines.append(f"内容: {text}")
+        lines.append("")
+
+    lines.append("返信例: #返信 12 牡蠣まだ80個あるで🦪")
+    return "\n".join(lines)
+
+
+def inquiry_category_from_flags(flags: Dict[str, bool]) -> str:
+    tags = []
+    if flags.get("asks_people_and_oysters"):
+        tags.append("人数+牡蠣")
+    else:
+        if flags.get("asks_oyster_stock") or flags.get("mentions_oyster"):
+            tags.append("牡蠣")
+        if flags.get("asks_crowd"):
+            tags.append("人数")
+    if flags.get("asks_review"):
+        tags.append("口コミ")
+    return "/".join(tags) if tags else "雑談"
 
 
 # =========================================================
@@ -573,9 +677,23 @@ def classify_message(text: str) -> Dict[str, bool]:
     }
 
 
-def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[str, bool]) -> str:
+
+# =========================================================
+# 自動返信文
+# =========================================================
+
+def oyster_stock_reply() -> str:
+    count = get_oyster_count()
+    if count <= 0:def compose_owner_alert(
+    inquiry_id: int,
+    display_name: str,
+    user_id: str,
+    text: str,
+    flags: Dict[str, bool]
+) -> str:
     parts = [
         "【問い合わせ通知】",
+        f"ID: {inquiry_id}",
         f"お客様: {display_name}",
         f"userId: {user_id}",
         f"内容: {text}",
@@ -594,14 +712,11 @@ def compose_owner_alert(display_name: str, user_id: str, text: str, flags: Dict[
     if flags.get("asks_people_and_oysters"):
         parts.append("→ 人数と牡蠣の両方について聞かれてます")
 
-    return "\n".join(parts)
-# =========================================================
-# 自動返信文
-# =========================================================
+    parts.append("")
+    parts.append(f"返信する時: #返信 {inquiry_id} 返信文")
 
-def oyster_stock_reply() -> str:
-    count = get_oyster_count()
-    if count <= 0:
+    return "\n".join(parts)
+    
         return (
             "問い合わせありがとうな🦪\n"
             "いま案内できる牡蠣は確認中やねん。\n"
@@ -737,7 +852,9 @@ def owner_help_text() -> str:
         "#今すぐ1投稿\n"
         "#今すぐ2投稿\n"
         "#今すぐ3投稿\n"
-        "#口コミURL"
+        "#口コミURL\n"
+        "#未返信\n"
+        "#返信 1 牡蠣まだ80個あるで🦪"
     )
 
 
@@ -772,6 +889,30 @@ def handle_owner_command(text: str) -> str:
     if t == "#口コミURL":
         return REVIEW_URL
 
+    if t == "#未返信":
+        return format_pending_inquiries(limit=10)
+
+    m = re.match(r"^#返信\s+(\d+)\s+(.+)$", t, re.DOTALL)
+    if m:
+        inquiry_id = int(m.group(1))
+        reply_text_body = m.group(2).strip()
+
+        inquiry = get_inquiry_by_id(inquiry_id)
+        if not inquiry:
+            return f"ID {inquiry_id} の問い合わせは見つからんかったで。"
+
+        try:
+            push_line(inquiry["user_id"], reply_text_body)
+            mark_inquiry_replied(inquiry_id)
+            return (
+                f"ID {inquiry_id} に返信送ったで。\n\n"
+                f"宛先: {inquiry['display_name'] or '不明'}\n"
+                f"本文: {reply_text_body}"
+            )
+        except Exception as e:
+            logger.exception("failed to push inquiry reply")
+            return f"返信送信でエラー出たわ:\n{str(e)}"
+    
     if t == "#今日の投稿作成":
         posts = generate_daily_posts()
         save_daily_posts(today_str(), posts)
@@ -868,7 +1009,7 @@ async def callback(request: Request):
         reply_token = event.reply_token
         source = event.source
         user_id = getattr(source, "user_id", "") or ""
-        display_name = "不明"
+        display_name = get_cached_display_name(user_id) if user_id else "不明"
 
         logger.info("message user_id=%s text=%s", user_id, text)
 
@@ -903,13 +1044,26 @@ async def callback(request: Request):
 
             flags = classify_message(text)
 
-            if OWNER_USER_ID and (
+            inquiry_id = None
+
+            if user_id and (
                 flags["asks_oyster_stock"]
                 or flags["asks_crowd"]
                 or flags["asks_review"]
                 or flags["asks_people_and_oysters"]
             ):
-                push_line(OWNER_USER_ID, compose_owner_alert(display_name, user_id, text, flags))
+                inquiry_id = save_inquiry(
+                    user_id=user_id,
+                    display_name=display_name,
+                    message_text=text,
+                    category=inquiry_category_from_flags(flags)
+                )
+
+            if OWNER_USER_ID and inquiry_id:
+                push_line(
+                    OWNER_USER_ID,
+                    compose_owner_alert(inquiry_id, display_name, user_id, text, flags)
+                )
 
             if flags["asks_review"]:
                 reply_line(reply_token, review_reply())
