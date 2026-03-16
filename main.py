@@ -118,11 +118,29 @@ def init_db():
     conn = get_conn()
     cur = conn.cursor()
         
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS line_users (
             user_id TEXT PRIMARY KEY,
-          cur.execute("""
+            display_name TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            review_sent INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS inquiries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id TEXT NOT NULL,
@@ -133,16 +151,10 @@ def init_db():
             created_at TEXT NOT NULL,
             replied_at TEXT
         )
-    """)  display_name TEXT,
-            first_seen_at TEXT NOT NULL,
-            last_seen_at TEXT NOT NULL,
-            review_sent INTEGER NOT NULL DEFAULT 0
-        )
     """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS daily_threads_posts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             post_date TEXT NOT NULL,
             slot INTEGER NOT NULL,
             post_text TEXT NOT NULL,
@@ -150,7 +162,7 @@ def init_db():
             posted_at TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(post_date, slot)
+            PRIMARY KEY (post_date, slot)
         )
     """)
 
@@ -158,8 +170,8 @@ def init_db():
     defaults = {
         "people_count": "0",
         "oyster_count": "0",
-        "last_reset_date": today_str(),
     }
+
     for k, v in defaults.items():
         cur.execute("""
             INSERT OR IGNORE INTO app_state (key, value, updated_at)
