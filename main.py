@@ -1023,24 +1023,12 @@ async def callback(request: Request):
                 continue
 
             if not is_open_now():
-                ai_text = ai_kansai_reply(
-                    f"""
-今は営業時間外です。
-営業時間は毎日 {OPEN_HOUR}:00〜23:59 です。
-
-お客様メッセージ:
-{text}
-
-ルール:
-・営業時間外であることは伝える
-・でも会話は冷たく切らず、自然な関西弁で返す
-・雑談なら雑談として返す
-・人数や牡蠣について聞かれたら、営業時間外やけど分かる範囲で自然に返す
-""".strip(),
-                    display_name
-                )
-                reply_line(reply_token, ai_text)
-                continue
+    ai_text = ai_kansai_reply(
+        f"{text}\n\n補足: 今は営業時間外。営業時間は毎日 {OPEN_HOUR}:00〜23:59。",
+        display_name
+    )
+    reply_line(reply_token, ai_text)
+    continue
 
             flags = classify_message(text)
 
