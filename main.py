@@ -947,6 +947,41 @@ def verify_cron_secret(secret: str):
     if not CRON_SECRET or secret != CRON_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
 
+# =========================================================
+# Cron用
+# =========================================================
+
+def verify_cron_secret(secret: str):
+    if not CRON_SECRET or secret != CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@app.api_route("/cron/refresh-threads-token", methods=["GET", "POST"])
+def cron_refresh_threads_token(secret: str):
+    verify_cron_secret(secret)
+
+    if not THREADS_ACCESS_TOKEN:
+        raise HTTPException(status_code=500, detail="THREADS_ACCESS_TOKEN is missing")
+
+    url = "https://graph.threads.net/refresh_access_token"
+    params = {
+        "grant_type": "th_refresh_token",
+        "access_token": THREADS_ACCESS_TOKEN,
+    }
+
+    r = requests.get(url, params=params, timeout=30)
+
+    if not r.ok:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Threads token refresh failed: {r.status_code} {r.text}"
+        )
+
+    data = r.json()
+
+    return {"ok": True, "data": data}
+
+
 
 @app.post("/cron/reset")
 def cron_reset(secret: str):
