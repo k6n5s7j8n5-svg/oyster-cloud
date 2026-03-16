@@ -947,14 +947,6 @@ def verify_cron_secret(secret: str):
     if not CRON_SECRET or secret != CRON_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-# =========================================================
-# Cron用
-# =========================================================
-
-def verify_cron_secret(secret: str):
-    if not CRON_SECRET or secret != CRON_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
 
 @app.api_route("/cron/refresh-threads-token", methods=["GET", "POST"])
 def cron_refresh_threads_token(secret: str):
