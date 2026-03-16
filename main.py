@@ -117,8 +117,6 @@ def get_conn():
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute("""
         
 
     cur.execute("""
