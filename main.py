@@ -1034,9 +1034,9 @@ async def callback(request: Request):
                 continue
 
             if not is_open_now():
-    ai_text = ai_kansai_reply(
-        f"{text}\n\n補足: 今は営業時間外。営業時間は毎日 {OPEN_HOUR}:00〜23:59。",
-        display_name
+                ai_text = ai_kansai_reply(
+                    f"{text}\n\n補足: 今は営業時間外。営業時間は毎日 {OPEN_HOUR}:00〜23:59。",
+                    display_name
     )
     reply_line(reply_token, ai_text)
     continue
