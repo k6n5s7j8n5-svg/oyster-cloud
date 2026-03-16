@@ -728,16 +728,16 @@ def compose_owner_alert(
 
     return "\n".join(parts)
     
-        return (
+    return (
             "問い合わせありがとうな🦪\n"
             "いま案内できる牡蠣は確認中やねん。\n"
-            "気になるときは、もう一回メッセージしてな。"
-        )
+            "気になるときは、もう一回メッセージしてな。"    
+     )
     return (
         f"問い合わせありがとうな🦪\n"
         f"今日の牡蠣は今、残り{count}個やで！\n"
         f"{SHOP_AREA}で牡蠣食べたなったら待ってるで。"
-    )
+      )
 
 
 def people_reply() -> str:
