@@ -1037,9 +1037,9 @@ async def callback(request: Request):
                 ai_text = ai_kansai_reply(
                     f"{text}\n\n補足: 今は営業時間外。営業時間は毎日 {OPEN_HOUR}:00〜23:59。",
                     display_name
-    )
-    reply_line(reply_token, ai_text)
-    continue
+                )
+                reply_line(reply_token, ai_text)
+                continue
 
             flags = classify_message(text)
 
