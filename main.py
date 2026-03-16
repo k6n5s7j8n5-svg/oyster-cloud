@@ -693,7 +693,7 @@ def oyster_stock_reply() -> str:
     if count <= 0:
         return "今牡蠣売り切れやわ～！"
 
-    return f" 今の牡蠣在庫は｛count}個やで！"
+    return f" 今の牡蠣在庫は {count} 個やで！"
  
 def compose_owner_alert(
     inquiry_id: int,
