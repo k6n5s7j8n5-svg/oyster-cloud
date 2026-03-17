@@ -12,10 +12,6 @@ import requests
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
-import requests
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import PlainTextResponse
-
 from openai import OpenAI
 
 from linebot.v3.webhook import WebhookParser
