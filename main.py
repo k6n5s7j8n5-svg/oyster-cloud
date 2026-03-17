@@ -26,6 +26,70 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+def ai_threads_post(slot_label: str) -> str:
+    prompt = f"""
+あなたは大阪福島の立ち飲み牡蠣屋「キヨリト」の広報担当です。
+Threadsに投稿する短文を1つだけ作ってください。
+
+条件：
+・必ず関西弁
+・1〜2行
+・自然でうまそうな雰囲気
+・牡蠣好きが思わず食べたくなる文章
+・絵文字は🦪だけ使う
+・ハッシュタグは不要
+・「！」の多用は避ける
+・宣伝くさすぎず、リアルな店の空気感を出す
+・出力は投稿文だけにする
+・カギ括弧や説明文は不要
+
+投稿時間帯：
+{slot_label}
+"""
+
+    if not OPENAI_API_KEY:
+        return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
+
+    try:
+        res = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4.1-mini",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "あなたは大阪の飲食店SNS運用が得意なコピーライターです。短く自然な関西弁で、食欲をそそる投稿を作ります。"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0.9,
+                "max_tokens": 120,
+            },
+            timeout=20,
+        )
+
+        res.raise_for_status()
+        data = res.json()
+        text = data["choices"][0]["message"]["content"].strip()
+        text = text.replace("「", "").replace("」", "").strip()
+
+        if not text:
+            return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
+
+        return text
+
+    except Exception as e:
+        print(f"[ai_threads_post error] {e}")
+        return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
 
 # =========================================================
 # 基本設定
