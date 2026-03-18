@@ -28,6 +28,14 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+POST_STOPPED = False
+
+def set_post_stopped(flag: bool):
+    global POST_STOPPED
+    POST_STOPPED = flag
+
+def is_post_stopped() -> bool:
+    return POST_STOPPED
 def ai_threads_post(slot_label: str) -> str:
     prompt = f"""
 あなたは大阪福島の立ち飲み牡蠣屋「キヨリト」の広報担当です。
