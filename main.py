@@ -1078,6 +1078,21 @@ async def callback(request: Request):
 
         text = (event.message.text or "").strip()
         reply_token = event.reply_token
+
+
+# =========================
+# 投稿停止コマンド
+# =========================
+        if text == "#休み":
+            set_post_stopped(True)
+            reply_line(reply_token, "今日はThreads投稿ストップしとくで👌")
+            continue
+
+        if text == "#営業":
+            set_post_stopped(False)
+            reply_line(reply_token, "Threads投稿再開したで🔥")
+            continue
+        
         source = event.source
         user_id = getattr(source, "user_id", "") or ""
         display_name = get_cached_display_name(user_id) if user_id else "不明"
@@ -1221,8 +1236,15 @@ def cron_post_slot(slot: int, secret: str):
 
     if posts[slot]["posted"]:
         return {"ok": True, "message": "already posted", "slot": slot}
-
-    result = post_to_threads(posts[slot]["text"])
+# =========================
+# 投稿停止チェック
+# =========================
+   if is_post_stopped():
+       print("投稿停止中")
+       return {"ok": True, "message": "stopped"}
+  
+   text = ai_threads_post("夜")
+   result = post_to_threads(text)
     mark_posted(today_str(), slot)
 
     if OWNER_USER_ID:
