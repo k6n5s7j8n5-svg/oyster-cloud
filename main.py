@@ -36,6 +36,14 @@ def set_post_stopped(flag: bool):
 
 def is_post_stopped() -> bool:
     return POST_STOPPED
+def slot_label(slot: int) -> str:
+    if slot == 1:
+        return "昼"
+    if slot == 2:
+        return "夕方"
+    if slot == 3:
+        return "夜"
+    return "営業時間"    
 def ai_threads_post(slot_label: str) -> str:
     prompt = f"""
 あなたは大阪福島の立ち飲み牡蠣屋「キヨリト」の広報担当です。
@@ -483,12 +491,24 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成（完成版）
 # =========================================================
 
-def generate_ai_threads_post(slot: int) -> str:
+def build_threads_posts(slot: int) -> str:
     posts = {
-        1: "16:00\u304b\u3089\u958b\u3051\u308b\u3067\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u5f85\u3063\u3066\u308b\u3067\uff01",
-        2: "\u4eca\u958b\u3044\u3066\u308b\u3067\U0001f9aa \u3075\u3089\u3063\u3068\u4e00\u676f\u5bc4\u3063\u3066\u306a\uff01",
-        3: "\u591c\u306e\u7de0\u3081\u306b\u7261\u8823\u3069\u3046\uff1f\U0001f9aa \u5927\u962a\u798f\u5cf6\u3067\u4e00\u676f\u3044\u3053\u3084",
-    }
+    1: {
+        "time": "12:00",
+        "posted": is_posted(today_str(), 1),
+        "text": ai_threads_post(slot_label(1)),
+    },
+    2: {
+        "time": "18:00",
+        "posted": is_posted(today_str(), 2),
+        "text": ai_threads_post(slot_label(2)),
+    },
+    3: {
+        "time": "22:30",
+        "posted": is_posted(today_str(), 3),
+        "text": ai_threads_post(slot_label(3)),
+    },
+}
     return posts.get(slot, "oyster post")
 
     people = get_people_count()
@@ -1250,14 +1270,14 @@ def cron_post_slot(slot: int, secret: str):
         print("posting stopped")
         return {"ok":True,"message": "stopped"}
 
-    text = ai_threads_post("night")
+    text = ai_threads_post(slot_label(slot))
     result = post_to_threads(text)
     mark_posted(today_str(), slot)
 
     if OWNER_USER_ID:
         push_line(
         OWNER_USER_ID,
-        f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿したで🦪\n\n{posts[slot]['text']}"
+        f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿したで🦪\n\n{text}"
     )
 
     return {"ok": True, "slot": slot, "result": result}
