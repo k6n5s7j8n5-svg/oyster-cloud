@@ -1239,7 +1239,7 @@ def cron_post_slot(slot: int, secret: str):
 # =========================
 # 投稿停止チェック
 # =========================
-   if is_post_stopped():
+    if is_post_stopped():
        print("投稿停止中")
        return {"ok": True, "message": "stopped"}
   
