@@ -1255,7 +1255,7 @@ def cron_post_slot(slot: int, secret: str):
     mark_posted(today_str(), slot)
 
     if OWNER_USER_ID:
-    push_line(
+        push_line(
         OWNER_USER_ID,
         f"{slot}本目（{POST_SLOTS[slot]}）をThreadsに投稿したで🦪\n\n{posts[slot]['text']}"
     )
