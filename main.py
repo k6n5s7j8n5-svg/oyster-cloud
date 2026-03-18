@@ -1248,12 +1248,12 @@ def cron_post_slot(slot: int, secret: str):
 # 投稿停止チェック
 # =========================
     if is_post_stopped():
-       print("投稿停止中")
-       return {"ok": True, "message": "stopped"}
-  
-   text = ai_threads_post("夜")
-   result = post_to_threads(text)
-    mark_posted(today_str(), slot)
+    print("投稿停止中")
+    return {"ok": True, "message": "stopped"}
+
+text = ai_threads_post("夜")
+result = post_to_threads(text)
+mark_posted(today_str(), slot)
 
     if OWNER_USER_ID:
     push_line(
