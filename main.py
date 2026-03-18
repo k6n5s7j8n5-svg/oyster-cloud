@@ -491,24 +491,24 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成（完成版）
 # =========================================================
 
-def build_threads_posts(slot: int) -> str:
-    posts = {
-    1: {
-        "time": "12:00",
-        "posted": is_posted(today_str(), 1),
-        "text": ai_threads_post(slot_label(1)),
-    },
-    2: {
-        "time": "18:00",
-        "posted": is_posted(today_str(), 2),
-        "text": ai_threads_post(slot_label(2)),
-    },
-    3: {
-        "time": "22:30",
-        "posted": is_posted(today_str(), 3),
-        "text": ai_threads_post(slot_label(3)),
-    },
-}
+def build_daily_posts() -> dict:
+    return {
+        1: {
+            "time": "12:00",
+            "posted": is_posted(today_str(), 1),
+            "text": ai_threads_post(slot_label(1)),
+        },
+        2: {
+            "time": "18:00",
+            "posted": is_posted(today_str(), 2),
+            "text": ai_threads_post(slot_label(2)),
+        },
+        3: {
+            "time": "22:30",
+            "posted": is_posted(today_str(), 3),
+            "text": ai_threads_post(slot_label(3)),
+        },
+    }
     return posts.get(slot, "oyster post")
 
     people = get_people_count()
