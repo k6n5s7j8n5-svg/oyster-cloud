@@ -575,9 +575,9 @@ def build_daily_posts() -> dict:
 
 def generate_daily_posts() -> Dict[int, str]:
     return {
-        1: generate_ai_threads_post(1),
-        2: generate_ai_threads_post(2),
-        3: generate_ai_threads_post(3),
+        1: ai_threads_post(slot_label(1)),
+        2: ai_threads_post(slot_label(2)),
+        3: ai_threads_post(slot_label(3)),
     }
 
 
