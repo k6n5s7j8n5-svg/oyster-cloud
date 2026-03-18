@@ -1122,7 +1122,14 @@ async def callback(request: Request):
         
         source = event.source
         user_id = getattr(source, "user_id", "") or ""
-        display_name = get_cached_display_name(user_id) if user_id else "不明"
+
+        display_name = "不明"
+        if user_id:
+            try:
+                profile = messaging_api.get_profile(user_id)
+                display_name = profile.display_name
+            except:
+                display_name = get_cached_display_name(user_id) or "不明"
 
         logger.info("message user_id=%s text=%s", user_id, text)
 
