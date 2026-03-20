@@ -45,16 +45,22 @@ def slot_label(slot: int) -> str:
         return "夜"
     return "営業時間"    
 def ai_threads_post(slot_label: str) -> str:
+    extra = ""
+
+    if"12" in slot_label or "昼" in slot_label:
+        extra"・16時から営業していることを自然に入れてください"
+        
     prompt = f"""
 あなたは大阪福島の立ち飲み牡蠣屋「キヨリト」の広報担当です。
 Threadsに投稿する短文を1つだけ作ってください。
 
 条件：
 ・必ず関西弁
-・1〜2行
+・5〜8行
 ・自然でうまそうな雰囲気
 ・牡蠣好きが思わず食べたくなる文章
 ・絵文字は🦪だけ使う
+・牡蠣の豆知識も2日に一回は発信
 ・ハッシュタグは不要
 ・「！」の多用は避ける
 ・宣伝くさすぎず、リアルな店の空気感を出す
