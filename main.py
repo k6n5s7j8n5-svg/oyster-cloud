@@ -48,7 +48,7 @@ def ai_threads_post(slot_label: str) -> str:
     extra = ""
 
     if"12" in slot_label or "昼" in slot_label:
-        extra"・16時から営業していることを自然に入れてください"
+        extra = "・16時から営業していることを自然に入れてください"
         
     prompt = f"""
 あなたは大阪福島の立ち飲み牡蠣屋「キヨリト」の広報担当です。
