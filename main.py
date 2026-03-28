@@ -677,6 +677,11 @@ def format_posts_for_line(post_date: str, posts: Dict[int, Dict]) -> str:
 # =========================================================
 
 def create_threads_post(text: str) -> str:
+    print("🟡 create_threads_post 開始")
+    print("TOKENある？", bool(THREADS_ACCESS_TOKEN))
+    print("USER_IDある？", bool(THREADS_USER_ID))
+    print("投稿内容:", text)
+
     if not THREADS_ACCESS_TOKEN or not THREADS_USER_ID:
         raise RuntimeError("THREADS_ACCESS_TOKEN or THREADS_USER_ID is missing.")
 
@@ -707,9 +712,20 @@ def publish_threads_post(creation_id: str) -> Dict:
 
 
 def post_to_threads(text: str) -> Dict:
-    creation_id = create_threads_post(text)
-    result = publish_threads_post(creation_id)
-    return {"creation_id": creation_id, "publish_result": result}
+    try:
+        print("① create開始")
+        creation_id = create_threads_post(text)
+        print("② create成功:", creation_id)
+
+        print("③ publish開始")
+        result = publish_threads_post(creation_id)
+        print("④ publish成功:", result)
+
+        return {"creation_id": creation_id, "publish_result": result}
+
+    except Exception as e:
+        print("💀 Threads投稿エラー:", e)
+        raise e
 
 
 # =========================================================
