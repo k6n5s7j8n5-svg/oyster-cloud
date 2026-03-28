@@ -36,103 +36,7 @@ def set_post_stopped(flag: bool):
 
 def is_post_stopped() -> bool:
     return POST_STOPPED
-def slot_label(slot: int) -> str:
-    if slot == 1:
-        return "昼"
-    if slot == 2:
-        return "夕方"
-    if slot == 3:
-        return "夜"
-    return "営業時間"    
-def ai_threads_post(slot_label: str) -> str:
-    extra = ""
 
-    if"12" in slot_label or "昼" in slot_label:
-        extra = "・16時から営業していることを自然に入れてください"
-        
-    prompt = f"""
-あなたは大阪福島の小さい牡蠣屋の店主です。
-この店はフランチャイズですが、「この店主がおるならこの店舗行きたい」と思わせるのが目的です。
-
-これは宣伝ではなく、店主のひとりごとです。
-
-【絶対ルール】
-・1〜2行（最大でも3行）
-・短く
-・説明しない
-・オチを作らない
-・綺麗にまとめない
-・感動させにいかない
-・意味が薄くてもOK
-・途中で終わってもOK
-・「なんやこれ？」くらいがちょうどいい
-・AIっぽい文章は禁止
-・ポエム禁止
-・宣伝禁止
-・「また来てください」禁止
-
-【内容】
-・日常のどうでもいいこと
-・店の空気
-・お客さんとの一瞬
-・眠さ、だるさ、ちょっとした感情
-・筋トレはたまにだけ
-
-【関西弁】
-・軽く混ざる程度
-・無理に使わない
-
-【時間帯】
-{slot_role}
-
-【出力】
-投稿文だけ
-1本
-投稿時間帯：
-{slot_label}
-"""
-
-    if not OPENAI_API_KEY:
-        return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
-
-    try:
-        res = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-4.1-mini",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "大阪の飲食店SNSが得意なコピーライター。自然な関西弁で短く食欲をそそる投稿を作る。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "temperature": 0.9,
-                "max_tokens": 120,
-            },
-            timeout=20,
-        )
-
-        res.raise_for_status()
-        data = res.json()
-        text = data["choices"][0]["message"]["content"].strip()
-        text = text.replace("「", "").replace("」", "").strip()
-
-        if not text:
-            return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
-
-        return text
-
-    except Exception as e:
-        print(f"[ai_threads_post error] {e}")
-        return "今日はええ牡蠣入ってるで、ふらっと一杯どうや🦪"
 # =========================================================
 # 基本設定
 # =========================================================
@@ -520,11 +424,23 @@ def get_line_display_name(user_id: str) -> str:
 
 def build_prompt_for_slot(slot: int) -> str:
     if slot == 1:
-    　　slot_role = "12時。営業前。営業感出すな。昼のどうでもいいこと。眠い、だるい、考え事OK"
-　　 elif slot == 2:
-    　　slot_role = "18時。営業中。来たくなる空気OK。でも宣伝するな。ゆるい雰囲気"
-　　 else:
-    　　slot_role = "22:30。夜。余韻。客との一瞬やちょっとした感情。綺麗に締めるな"
+        slot_role = """12時。営業前。
+営業感出すな。
+昼のどうでもいいこと。
+眠い、だるい、考え事OK
+"""
+    elif slot == 2:
+        slot_role = """18時。営業中。
+来たくなる空気OK。
+でも宣伝するな。
+ゆるい雰囲気
+"""
+    else:
+        slot_role = """22:30。夜。
+余韻。
+客との一瞬やちょっとした感情。
+綺麗に締めるな
+"""
 
     prompt = f"""
 あなたは大阪福島の小さい牡蠣屋の店主です。
@@ -564,19 +480,8 @@ def build_prompt_for_slot(slot: int) -> str:
 【出力】
 投稿文だけ
 1本
-    return prompt.strip()
-
-
-def ai_threads_post(slot: int) -> str:
-    prompt = build_prompt_for_slot(slot)
-
-    fallback_map = {
-        1: "昼の自分、まだ全然しゃきっとしてない",
-        2: "今日はなんかゆっくり話せる日な気する",
-        3: "最後に来てくれた人のおかげでちょっと救われた",
-    }
-
-    try:
+"""
+    return prompt.strip()   try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
