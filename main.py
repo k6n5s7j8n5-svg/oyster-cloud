@@ -1279,7 +1279,7 @@ def cron_generate_daily_posts(secret: str):
            print("🔥 Threads投稿cron開始")
            result = post_to_threads(text)
            print("✅ 投稿成功:", result)
-       except Exception as e:
+    except Exception as e:
            print("💀 投稿失敗:", e)
     if OWNER_USER_ID:
         push_line(OWNER_USER_ID, format_posts_for_line(today_str(), saved))
