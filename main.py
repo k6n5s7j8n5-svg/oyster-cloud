@@ -1039,13 +1039,6 @@ def handle_owner_command(text: str) -> str:
         saved = get_daily_posts(today_str())
         return "今日のThreads投稿案を作成したで。\n\n" + format_posts_for_line(today_str(), saved)
 
-       try:
-           text = saved[0]["text"] if saved else posts[0]
-           print("🔥 Threads投稿cron開始")
-           result = post_to_threads(text)
-           print("✅ 投稿成功:", result)
-       except Exception as e:
-           print("💀 投稿失敗:", e)
     if t == "#投稿確認":
         posts = get_daily_posts(today_str())
         if not posts:
@@ -1281,6 +1274,13 @@ def cron_generate_daily_posts(secret: str):
     posts = generate_daily_posts()
     save_daily_posts(today_str(), posts)
     saved = get_daily_posts(today_str())
+    try:
+           text = saved[0]["text"] if saved else posts[0]
+           print("🔥 Threads投稿cron開始")
+           result = post_to_threads(text)
+           print("✅ 投稿成功:", result)
+       except Exception as e:
+           print("💀 投稿失敗:", e)
     if OWNER_USER_ID:
         push_line(OWNER_USER_ID, format_posts_for_line(today_str(), saved))
     return {"ok": True, "message": "daily posts generated"}
