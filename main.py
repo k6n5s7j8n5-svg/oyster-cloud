@@ -1246,7 +1246,12 @@ def cron_post_slot(slot: int, secret: str):
         print("posting stopped")
         return {"ok":True,"message": "stopped"}
 
-    text = ai_threads_post(slot_label(slot))
+    posts = get_daily_posts(today_str())
+
+    if slot not in posts:
+        return {"ok": False, "message": f"slot {slot} not found"}
+
+    text = posts[slot]["text"]
     result = post_to_threads(text)
     mark_posted(today_str(), slot)
 
