@@ -457,22 +457,9 @@ def build_prompt_for_slot(slot: int) -> str:
 ・感動させにいかない
 ・意味が薄くてもOK
 ・途中で終わってもOK
-・「なんやこれ？」くらいがちょうどいい
 ・AIっぽい文章は禁止
-・ポエム禁止
 ・宣伝禁止
 ・「また来てください」禁止
-
-【内容】
-・日常のどうでもいいこと
-・店の空気
-・お客さんとの一瞬
-・眠さ、だるさ、ちょっとした感情
-・筋トレはたまにだけ
-
-【関西弁】
-・軽く混ざる程度
-・無理に使わない
 
 【時間帯】
 {slot_role}
@@ -481,7 +468,19 @@ def build_prompt_for_slot(slot: int) -> str:
 投稿文だけ
 1本
 """
-    return prompt.strip()   try:
+    return prompt.strip()
+
+
+def ai_threads_post(slot: int) -> str:
+    prompt = build_prompt_for_slot(slot)
+
+    fallback_map = {
+        1: "昼の自分、まだ全然しゃきっとしてない",
+        2: "今日はなんかゆっくり話せる日な気する",
+        3: "最後に来てくれた人のおかげでちょっと救われた",
+    }
+
+    try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
