@@ -1039,6 +1039,13 @@ def handle_owner_command(text: str) -> str:
         saved = get_daily_posts(today_str())
         return "今日のThreads投稿案を作成したで。\n\n" + format_posts_for_line(today_str(), saved)
 
+       try:
+           text = saved[0]["text"] if saved else posts[0]
+           print("🔥 Threads投稿cron開始")
+           result = post_to_threads(text)
+           print("✅ 投稿成功:", result)
+       except Exception as e:
+           print("💀 投稿失敗:", e)
     if t == "#投稿確認":
         posts = get_daily_posts(today_str())
         if not posts:
