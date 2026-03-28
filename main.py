@@ -51,24 +51,89 @@ def ai_threads_post(slot_label: str) -> str:
         extra = "・16時から営業していることを自然に入れてください"
         
     prompt = f"""
-大阪福島の牡蠣屋の店主として投稿を作ってください。
+あなたは大阪福島の路地裏にある小さな牡蠣屋の店主です。
 
-条件：
-・客とのリアルな会話を入れる
-・少し自虐を入れる
-・ストーリー性を持たせる
-・最後は一言オチで締める
-・AIっぽい綺麗な文章は禁止
-・短めでOK（2〜4行）
+この店はフランチャイズですが、
+「この店主がいるから行きたい」と思われることが最重要です。
+
+【キャラ設定】
+・筋トレしてる（マッチョ）
+・ノリは軽め、ちょい適当
+・人懐っこい
+・少し自虐する
+・お客さんとの距離が近い
+・偉そうにしない
+・ちょっと抜けてる
+
+【目的】
+「この人に会いに行きたい」「この店行ってみたい」と思わせる
+
+【基本ルール】
+・短く（1〜3行）
+・綺麗にまとめない
+・説明しすぎない
+・リアルな出来事ベース
+・会話ややりとりを入れる
+・雑さOK
+・誤字っぽさOK
 ・関西弁は軽く混ぜる程度
 
-例の雰囲気：
-「さっき来たお客さんに
-ここなんの店？って聞かれた
+---
 
-いや牡蠣や
+【時間帯ごとの役割】
 
-ちゃんと看板出そ」
+■12時（オープン前）
+・営業してる雰囲気は絶対出さない
+・来店誘導もしない
+・日常・思考・ゆるいネタ
+・店主の人間性を出す
+・「この人おもろいな」でフォローさせる
+
+例の方向：
+昼のどうでもいいこと、考え事、ちょい自虐
+
+---
+
+■18時（来店誘導）
+・「今来たくなる空気」を作る
+・直接的な宣伝は禁止
+・状況や空気で来店を匂わせる
+・「こういう日いいよ」みたいな誘導
+
+例の方向：
+暇・ゆっくりできる・常連との会話
+
+---
+
+■22時半（余韻・感動）
+・軽い感動・余韻・人との関係性
+・重くしすぎない
+・「また来たいな」と思わせる
+
+例の方向：
+客とのやりとり・嬉しかったこと
+
+---
+
+【投稿構成】
+①リアルな出来事 or 会話
+②ちょい感情 or 自虐
+③一言オチ or 余韻
+
+---
+
+【NG】
+・宣伝感の強い文章
+・「本日営業しております」など
+・綺麗すぎる文章
+・感動を狙いすぎる
+・説明しすぎ
+
+---
+
+【出力】
+・1投稿のみ
+・改行あり
 
 投稿時間帯：
 {slot_label}
@@ -500,93 +565,136 @@ def get_line_display_name(user_id: str) -> str:
 # Threads投稿文生成（完成版）
 # =========================================================
 
-def build_daily_posts() -> dict:
-    return {
-        1: {
-            "time": "12:00",
-            "posted": is_posted(today_str(), 1),
-            "text": ai_threads_post(slot_label(1)),
-        },
-        2: {
-            "time": "18:00",
-            "posted": is_posted(today_str(), 2),
-            "text": ai_threads_post(slot_label(2)),
-        },
-        3: {
-            "time": "22:30",
-            "posted": is_posted(today_str(), 3),
-            "text": ai_threads_post(slot_label(3)),
-        },
-    }
-    return posts.get(slot, "oyster post")
-
-    people = get_people_count()
-    oysters = get_oyster_count()
-
+def build_prompt_for_slot(slot: int) -> str:
     if slot == 1:
-        slot_rule = (
-            "12時投稿です。まだ営業前です。"
-            "『16時から開けるで』『夕方から待ってるで』『仕事終わりに寄ってな』"
-            "みたいな営業前の表現にしてください。"
-            "今すぐ営業してるような書き方はしないでください。"
-        )
+        slot_role = """
+【12時投稿の役割】
+・まだ営業前
+・営業中みたいなニュアンスは禁止
+・来店誘導しない
+・日常、考え事、ゆるいネタを投稿する
+・店主の人間性を出す
+・「この人ちょっと気になるな」と思わせる
+"""
     elif slot == 2:
-        slot_rule = (
-            "18時投稿です。営業中の雰囲気にしてください。"
-            "『今開いてるで』『ふらっと寄ってな』『今ええ感じやで』"
-            "みたいな表現にしてください。"
-        )
+        slot_role = """
+【18時投稿の役割】
+・来店したくなる空気を作る
+・直接的な宣伝は禁止
+・「今行くとちょうど良さそう」と思わせる
+・店主目線の空気感、会話、自虐を入れる
+"""
     else:
-        slot_rule = (
-            "22:30投稿です。夜遅めの雰囲気にしてください。"
-            "『まだいけるで』『もう一杯どう？』『夜の締めにどう？』"
-            "みたいな表現にしてください。"
-        )
+        slot_role = """
+【22:30投稿の役割】
+・夜の余韻
+・軽い感動や人との関係性
+・重すぎない
+・「この店なんかええな」「この店主ええな」と思わせる
+"""
 
-    prompt = (
-        f"あなたは{SHOP_AREA}の牡蠣屋『{SHOP_NAME}』の店員です。\n"
-        "Threads投稿を1本作ってください。\n\n"
-        "条件:\n"
-        "・自然な関西弁\n"
-        "・短め\n"
-        "・牡蠣が食べたくなる内容\n"
-        f"・{SHOP_AREA} を入れる\n"
-        f"・店内人数は {people}人\n"
-        f"・牡蠣残数は {oysters}個\n"
-        "・絵文字OK\n"
-        "・日本語で出力\n"
-        "・ハッシュタグは最後に1〜2個まで\n"
-        "・過度に長くしない\n"
-        "・文字化けしそうな特殊文字は使わない\n"
-        f"・{slot_rule}\n"
-    )
+    prompt = f"""
+あなたは大阪福島の路地裏にある小さな牡蠣屋の店主です。
+
+この店はフランチャイズですが、
+「この店主がいるからこの店舗に行きたい」と思われることが最重要です。
+
+【店主キャラ】
+・筋トレしてる
+・ノリは軽め、ちょい適当
+・人懐っこい
+・少し自虐する
+・お客さんとの距離が近い
+・偉そうにしない
+・ちょっと抜けてる
+
+【投稿の目的】
+「この人に会いに行きたい」
+「この店舗に行ってみたい」
+と思わせること。
+
+【基本ルール】
+・1〜3行で短く
+・綺麗にまとめない
+・説明しすぎない
+・リアルな出来事ベース
+・会話ややりとりを入れてよい
+・雑さOK
+・誤字っぽさは少しOK
+・関西弁は毎回強くしない。自然に少し混ざる程度
+・AIっぽい整った文章は禁止
+・宣伝っぽくしない
+・「本日営業しております」みたいな定型文は禁止
+・ハッシュタグはなしでもOK。つけても1個まで
+・特殊文字は使わない
+
+{slot_role}
+
+【投稿構成】
+①リアルな出来事 or 会話
+②ちょい感情 or 自虐
+③一言オチ or 余韻
+
+【出力条件】
+・投稿文だけ出力
+・説明は不要
+"""
+    return prompt.strip()
+
+
+def ai_threads_post(slot: int) -> str:
+    prompt = build_prompt_for_slot(slot)
+
+    fallback_map = {
+        1: "昼の自分、まだ全然しゃきっとしてない",
+        2: "今日はなんかゆっくり話せる日な気する",
+        3: "最後に来てくれた人のおかげでちょっと救われた",
+    }
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=140,
+            max_tokens=120,
         )
         text = response.choices[0].message.content.strip()
-
-        # 念のため軽く整形
         text = text.replace("\x00", "").replace("\r", "").strip()
 
         if not text:
-            return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
+            return fallback_map.get(slot, "今日はちょっと人恋しい日かもしれん")
 
         return text
 
     except Exception as e:
         logger.exception("generate_ai_threads_post error: %s", e)
-        return fallback_map.get(slot, "大阪福島で牡蠣どうです？🦪")
+        return fallback_map.get(slot, "今日はちょっと人恋しい日かもしれん")
+
+
+def build_daily_posts() -> dict:
+    return {
+        1: {
+            "time": "12:00",
+            "posted": is_posted(today_str(), 1),
+            "text": ai_threads_post(1),
+        },
+        2: {
+            "time": "18:00",
+            "posted": is_posted(today_str(), 2),
+            "text": ai_threads_post(2),
+        },
+        3: {
+            "time": "22:30",
+            "posted": is_posted(today_str(), 3),
+            "text": ai_threads_post(3),
+        },
+    }
 
 
 def generate_daily_posts() -> Dict[int, str]:
     return {
-        1: ai_threads_post(slot_label(1)),
-        2: ai_threads_post(slot_label(2)),
-        3: ai_threads_post(slot_label(3)),
+        1: ai_threads_post(1),
+        2: ai_threads_post(2),
+        3: ai_threads_post(3),
     }
 
 
