@@ -448,7 +448,6 @@ def build_prompt_for_slot(slot: int) -> str:
 {slot_role}
 
 【出力】
-投稿文だけprompt = f"""
 あなたはThreadsでバズる投稿を作るSNSマーケターです。
 
 目的は「いいね・保存・返信・フォロー」を増やすことです。
